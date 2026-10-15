@@ -1,0 +1,2335 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Portal CIPA · SESMT</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --surface-2:#f0f2f5; --border:#e1e4e8;
+  --text:#1b2430; --text-muted:#5e6a78; --text-faint:#6b7684;
+  --primary:#17415f; --primary-dark:#0f2e44; --primary-soft:#e6eef4;
+  --danger:#a3302a; --danger-soft:#fbe9e7;
+  --warn:#7a4f00; --warn-soft:#fbf0d9;
+  --ok:#1f6b4c; --ok-soft:#e5f3ec;
+  --radius:12px;
+  --shadow:none;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  box-sizing:border-box;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12161d; --surface:#1a1f29; --surface-2:#20262f; --border:#2c3441;
+    --text:#e7ebf0; --text-muted:#a3adba; --text-faint:#727d8c;
+    --primary:#5b9bd1; --primary-dark:#7bb0dd; --primary-soft:#1c2c3a;
+    --danger:#e07a6c; --danger-soft:#3a2220;
+    --warn:#e0b84a; --warn-soft:#3a3018;
+    --ok:#5cc490; --ok-soft:#1c3327;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12161d; --surface:#1a1f29; --surface-2:#20262f; --border:#2c3441;
+  --text:#e7ebf0; --text-muted:#a3adba; --text-faint:#727d8c;
+  --primary:#5b9bd1; --primary-dark:#7bb0dd; --primary-soft:#1c2c3a;
+  --danger:#e07a6c; --danger-soft:#3a2220;
+  --warn:#e0b84a; --warn-soft:#3a3018;
+  --ok:#5cc490; --ok-soft:#1c3327;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:"IBM Plex Sans",system-ui,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.5;
+}
+button{font-family:inherit;}
+a{color:var(--primary);}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
+
+.app{display:flex; min-height:100vh; height:100%;}
+.sidebar{
+  width:250px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; padding:14px 10px; padding-top:calc(14px + env(safe-area-inset-top,0px));
+  position:sticky; top:0; height:100vh; overflow-y:auto;
+}
+.brand{display:flex; align-items:center; gap:10px; padding:6px 12px 8px; font-weight:600; font-size:16px; color:var(--text);}
+.brand .mark{width:28px;height:28px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;}
+.side-section-title{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint); font-weight:600; padding:0 12px; margin:22px 0 6px; display:flex; align-items:center;}
+.side-section-title .icon-btn{margin-left:auto;width:28px;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.side-section-title .icon-btn:hover{border-color:var(--primary);color:var(--primary);}
+.icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+.unit-list{display:flex; flex-direction:column; gap:2px;}
+.unit-item{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:8px; cursor:pointer; color:var(--text-muted); font-size:14px; font-weight:500;
+}
+.unit-item > span:first-child{display:flex; align-items:center; gap:10px;}
+.unit-item .badge-count{margin-left:auto;}
+.unit-item:hover{background:var(--surface-2);}
+.unit-item.active{background:var(--primary-soft); color:var(--primary);}
+.unit-item .badge-count{font-size:12px; font-weight:600; color:var(--text-muted); background:var(--surface-2); padding:1px 8px; border-radius:99px;}
+.side-btn{
+  margin:6px 4px; padding:8px 10px; border-radius:8px; border:1px dashed var(--border); background:none;
+  color:var(--text-muted); cursor:pointer; text-align:left; font-size:13px;
+}
+.side-btn:hover{border-color:var(--primary); color:var(--primary);}
+.side-footer{margin-top:auto; padding:10px 8px; font-size:11px; color:var(--text-faint);}
+
+.main{flex:1; min-width:0; display:flex; flex-direction:column;}
+.topbar{
+  position:sticky; top:0; z-index:5; background:var(--bg); padding:calc(24px + env(safe-area-inset-top,0px)) 40px 0;
+}
+.topbar h1{margin:0; font-size:26px; font-weight:600;}
+.topbar .sub{color:var(--text-muted); font-size:14px; margin:4px 0 0;}
+.topbar .sub a{color:var(--primary); text-decoration:none; font-weight:500;}
+.topbar .sub a:hover{text-decoration:underline;}
+.tabs{display:flex; flex-wrap:wrap; margin-top:18px; border-bottom:1px solid var(--border);}
+.tab{
+  display:inline-flex; align-items:center; gap:8px; white-space:nowrap; cursor:pointer;
+  padding:12px 4px; margin-right:28px; color:var(--text-muted); font-weight:500; font-size:14px;
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.tab:hover{color:var(--primary);}
+.tab.active{color:var(--primary); border-bottom-color:var(--primary);}
+.tab .tab-count{font-size:12px; font-weight:600; padding:1px 8px; border-radius:99px; background:var(--danger-soft); color:var(--danger);}
+
+.content{padding:24px 40px 60px; overflow-x:auto;}
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-bottom:16px;}
+.card h3{margin:0 0 12px; font-size:15px; font-weight:600;}
+.row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.row-title{font-weight:600; font-size:15px;}
+.muted{color:var(--text-muted);}
+.faint{color:var(--text-faint); font-size:12px;}
+
+.btn{
+  height:40px; padding:0 16px; border-radius:8px; border:1px solid #cbd2da; background:var(--surface);
+  color:var(--text); cursor:pointer; font-size:13px; font-weight:500; display:inline-flex; align-items:center; gap:8px; text-decoration:none;
+}
+.btn:hover{border-color:var(--primary);}
+.btn-primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+.btn-primary:hover{background:var(--primary-dark); border-color:var(--primary-dark);}
+.btn-danger{color:var(--danger); border-color:var(--danger-soft);}
+.btn-danger:hover{background:var(--danger-soft);}
+.btn-sm{height:32px; padding:0 12px; font-size:12px;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px;}
+.stat{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px;}
+.stat .num{font-size:24px; font-weight:700;}
+.stat .label{color:var(--text-muted); font-size:12.5px;}
+
+table{width:100%; border-collapse:collapse; font-size:13.5px;}
+th{text-align:left; color:var(--text-faint); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em; padding:8px 10px; border-bottom:1px solid var(--border);}
+td{padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surface-2);}
+
+.pill{display:inline-flex; align-items:center; gap:5px; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:600; white-space:nowrap;}
+.pill-info{background:var(--primary-soft); color:var(--primary);}
+.pill-ok{background:var(--ok-soft); color:var(--ok);}
+.pill-warn{background:var(--warn-soft); color:var(--warn);}
+.pill-danger{background:var(--danger-soft); color:var(--danger);}
+.pill-muted{background:var(--surface-2); color:var(--text-muted);}
+
+.empty{text-align:center; padding:40px 20px; color:var(--text-faint);}
+.empty .big{font-size:28px; margin-bottom:8px;}
+
+.alert-box{display:flex; gap:10px; padding:12px 14px; border-radius:8px; margin-bottom:10px; align-items:flex-start;}
+.alert-box.danger{background:var(--danger-soft); color:var(--danger);}
+.alert-box.warn{background:var(--warn-soft); color:var(--warn);}
+.alert-box .txt{flex:1; color:var(--text);}
+.alert-box .txt b{color:inherit;}
+
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(10,15,25,.5); display:flex; align-items:flex-start; justify-content:center;
+  padding:5vh 16px; z-index:100; overflow-y:auto;
+}
+.modal{background:var(--surface); border-radius:var(--radius); width:100%; max-width:520px; box-shadow:0 20px 50px rgba(0,0,0,.3); margin-bottom:5vh;}
+.modal-head{padding:16px 18px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;}
+.modal-head h3{margin:0; font-size:16px;}
+.modal-close{cursor:pointer; color:var(--text-faint); font-size:18px; background:none; border:none;}
+.modal-body{padding:18px; display:flex; flex-direction:column; gap:12px; max-height:65vh; overflow-y:auto;}
+.modal-foot{padding:14px 18px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px;}
+
+.field{display:flex; flex-direction:column; gap:5px;}
+.field label{font-size:12.5px; font-weight:600; color:var(--text-muted);}
+.field input, .field select, .field textarea{
+  padding:8px 10px; border:1px solid var(--border); border-radius:7px; background:var(--bg); color:var(--text); font-size:13.5px; width:100%;
+  font-family:inherit;
+}
+.field input:focus, .field select:focus, .field textarea:focus{outline:2px solid var(--primary); outline-offset:0; border-color:var(--primary);}
+.field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.hint{font-size:11.5px; color:var(--text-faint);}
+
+.toast-wrap{position:fixed; bottom:calc(16px + env(safe-area-inset-bottom,0px)); right:16px; z-index:200; display:flex; flex-direction:column; gap:8px;}
+.toast{background:var(--text); color:var(--bg); padding:10px 16px; border-radius:8px; font-size:13px; box-shadow:var(--shadow); max-width:300px;}
+.toast.err{background:var(--danger);}
+.toast.ok{background:var(--ok);}
+
+.doc-item{display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;}
+.doc-icon{width:34px; height:34px; border-radius:7px; background:var(--primary-soft); color:var(--primary-dark); display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;}
+.doc-info{flex:1; min-width:0;}
+.doc-info .name{font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.doc-info .meta{font-size:11.5px; color:var(--text-faint);}
+
+.top-actions{display:flex; gap:8px; flex-wrap:wrap;}
+.loading-line{padding:30px; text-align:center; color:var(--text-faint);}
+.readonly-banner{background:var(--warn-soft); color:var(--warn); padding:9px 14px; border-radius:8px; font-size:12.5px; margin-bottom:14px;}
+.avatar-mini{width:20px;height:20px;border-radius:50%; vertical-align:middle; margin-right:5px;}
+
+.kpis{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:24px;}
+.kpi{padding:20px 24px;}
+.kpi + .kpi{border-left:1px solid var(--border);}
+.kpi .num{font-size:30px; font-weight:600; line-height:1.2;}
+.kpi .label{color:var(--text-muted);}
+.panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:24px; overflow:hidden;}
+.panel-head{padding:18px 20px; font-weight:600; font-size:15px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.lrow{display:grid; grid-template-columns:150px minmax(0,1fr) auto; align-items:center; gap:16px; padding:14px 20px; border-top:1px solid var(--border);}
+.lrow .t{font-weight:500;}
+.lrow .s{color:var(--text-muted); font-size:13px;}
+.sect-title{font-size:18px; font-weight:600; margin:0 0 12px;}
+.stepper{display:grid; padding:20px 0 8px;}
+.step{display:flex; flex-direction:column; align-items:center; min-width:0;}
+.step .track{display:flex; align-items:center; width:100%;}
+.step .ln{flex:1; height:2px; background:var(--border);}
+.step .ln.done{background:var(--ok);}
+.step .ln.none{background:transparent;}
+.dot{width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; flex:none; border:2px solid #cbd2da; background:var(--surface); color:var(--text-muted);}
+.dot.done{background:var(--ok); border-color:var(--ok); color:#fff;}
+.dot.cur{background:var(--primary); border-color:var(--primary); color:#fff; box-shadow:0 0 0 4px var(--primary-soft);}
+.dot.late{background:var(--danger); border-color:var(--danger); color:#fff; box-shadow:0 0 0 4px var(--danger-soft);}
+.step .slbl{font-size:12px; margin-top:8px; text-align:center; color:var(--text-muted); padding:0 4px;}
+.step .slbl.cur{font-weight:600; color:var(--primary);}
+.opt-row{display:flex; flex-wrap:wrap; gap:16px;}
+.opt{flex:1 1 260px; text-align:left; padding:18px; border-radius:10px; border:1px solid #cbd2da; background:var(--surface); cursor:pointer; color:var(--text); font-family:inherit;}
+.opt:hover{border-color:var(--primary);}
+.opt .opt-title{display:flex; align-items:center; gap:10px; font-weight:600; color:var(--text);}
+.opt .opt-title .icon{color:var(--primary);}
+.opt .opt-desc{margin-top:6px; color:var(--text-muted); font-size:13px;}
+.two-col{display:flex; flex-wrap:wrap; gap:24px; align-items:flex-start;}
+.two-col > .main-col{flex:999 1 520px; min-width:0;}
+.two-col > .side-col{flex:1 1 320px; min-width:0;}
+.banner{display:flex; flex-wrap:wrap; align-items:center; gap:16px; padding:16px; border-radius:10px;}
+.banner.warn{background:var(--warn-soft); color:var(--warn);}
+.banner.danger{background:var(--danger-soft); color:var(--danger);}
+.banner .b-text{flex:1 1 280px; color:var(--text);}
+.banner .b-title{font-weight:600;}
+.progress{height:8px; border-radius:99px; background:var(--border); overflow:hidden;}
+.progress > div{height:100%; background:var(--primary);}
+.lbl-s{font-size:12px; color:var(--text-faint); margin-bottom:2px;}
+@media (max-width:760px){
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .kpi:nth-child(3){border-left:none;}
+  .kpi:nth-child(n+3){border-top:1px solid var(--border);}
+  .lrow{grid-template-columns:1fr;}
+  .topbar,.content{padding-left:16px; padding-right:16px;}
+}
+.auth-wrap{position:fixed; inset:0; z-index:300; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:16px;}
+.auth-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px; width:100%; max-width:380px;}
+@media print{
+  .sidebar, .tabs, #btnEditUnit, .no-print{display:none !important;}
+  .app{display:block;}
+  .main{width:100%;}
+  .topbar{padding-top:0;}
+  body{background:#fff;}
+  .card{box-shadow:none; border:1px solid #ccc; break-inside:avoid;}
+  .content{padding:0; overflow-x:visible;}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span> Portal CIPA</div>
+    <div class="side-section-title">Geral</div>
+    <div class="unit-list" id="globalNav"></div>
+    <div class="side-section-title">Unidades <button class="icon-btn" id="btnAddUnit" aria-label="Nova unidade"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+    <div class="unit-list" id="unitList"><div class="faint" style="padding:8px;">Carregando…</div></div>
+    <div class="side-footer" id="userFooter"></div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+        <h1 id="pageTitle">Selecione uma unidade</h1>
+        <button class="btn" id="btnEditUnit" style="display:none;"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/></svg>Editar unidade</button>
+      </div>
+      <div class="sub" id="pageSub">Gestão de CIPA conforme NR-05</div>
+      <div class="tabs" id="tabs"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+
+<div id="authRoot" style="display:none;"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+<div id="modalRoot"></div>
+
+<script type="module">
+import { firebaseConfig, exigirLiberacao } from '../firebase-config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import * as FS from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import * as AU from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+(function(){
+"use strict";
+
+/* ---------------- state ---------------- */
+const S = {
+  db: null, fdb: null, auth: null, assets: null,
+  started: false,
+  units: [], mandates: [], members: [], documents: [], trainings: [], technicians: [],
+  currentUnitId: null,
+  currentTab: 'visao',
+  globalView: 'dashboard',
+  dimensionamento: null,
+  _dimGrau: 1,
+  _dimNumEmp: '',
+  _dimBuffer: null,
+  _expandedMandates: {},
+  _relatorioTipo: 'geral',
+  _relatorioUnitId: null,
+  unsub: [],
+  ready: {units:false}
+};
+
+const ALERT_LEAD_DAYS = 70;    // aviso aparece quando faltam X dias para o fim do mandato
+const PROCESS_LEAD_DAYS = 60;  // o cronograma do processo eleitoral é calculado a partir de X dias antes do fim
+const INSCRICAO_DIAS = 15;     // duração fixa do período de inscrição de candidatos
+
+/* ---------------- utils ---------------- */
+function uid(){ return 'id_' + Math.random().toString(36).slice(2,11) + Date.now().toString(36); }
+function fmtDate(d){ if(!d) return '—'; try{ const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString('pt-BR'); }catch(e){ return d; } }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function daysBetween(a,b){ return Math.round((new Date(b) - new Date(a)) / 86400000); }
+function addDaysISO(iso, days){ const d = new Date(iso+'T00:00:00'); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10); }
+function addYearsISO(iso, years){ const d = new Date(iso+'T00:00:00'); d.setFullYear(d.getFullYear()+years); return d.toISOString().slice(0,10); }
+function normStr(s){ return (s||'').trim().toLowerCase(); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg, type){
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className = 'toast' + (type ? ' '+type : '');
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(()=>t.remove(), 4200);
+}
+function byId(arr, id){ return arr.find(x=>x.id===id); }
+
+/* ---------------- ícones (traço) ---------------- */
+const ICON_PATHS = {
+  painel:'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  renovar:'<path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/><path d="M16 16h5v5"/>',
+  calc:'<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h8"/>',
+  relat:'<path d="M3 3v18h18"/><path d="M8 17V11M13 17V7M18 17v-4"/>',
+  predio:'<path d="M4 21V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v16"/><path d="M14 10h5a1 1 0 0 1 1 1v10"/><path d="M3 21h18M8 8h2M8 12h2M8 16h2"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  upload:'<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 20h16"/>',
+  download:'<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/>',
+  editar:'<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/>',
+  usuario:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  calendario:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  check:'<path d="M5 12l5 5 9-10"/>',
+  alerta:'<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/>',
+  erro:'<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16h.01"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  impressora:'<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
+  doc:'<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  escudo:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'
+};
+function ico(name, extra){
+  return '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"'+(extra?' '+extra:'')+'>'+(ICON_PATHS[name]||'')+'</svg>';
+}
+
+/* ---------------- importação de planilha de membros (CSV) ---------------- */
+const IMPORT_ROLE_OPTIONS = ['Titular','Suplente','Presidente','Vice-presidente','Secretário'];
+const IMPORT_TYPE_OPTIONS = ['Eleito','Indicado'];
+const IMPORT_REP_OPTIONS = ['Empregados','Empregador'];
+
+function stripAccents(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function normHeaderKey(h){ return stripAccents(h).toLowerCase().replace(/[^a-z0-9]/g,''); }
+function matchEnumValue(value, options){
+  const target = stripAccents(value||'').toLowerCase().trim();
+  return options.find(o=>stripAccents(o).toLowerCase()===target) || null;
+}
+function parseFlexibleDate(str){
+  if(!str) return null;
+  str = str.trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  return null;
+}
+
+function parseCSVTable(text){
+  text = text.replace(/^\uFEFF/, '');
+  const lines = text.split(/\r\n|\n|\r/).filter(l=>l.trim().length>0);
+  if(lines.length===0) return [];
+  const delim = (lines[0].match(/;/g)||[]).length >= (lines[0].match(/,/g)||[]).length ? ';' : ',';
+  function parseLine(line){
+    const cells = []; let cur='', inQuotes=false;
+    for(let i=0;i<line.length;i++){
+      const ch = line[i];
+      if(inQuotes){
+        if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else { inQuotes=false; } }
+        else cur+=ch;
+      } else {
+        if(ch==='"') inQuotes=true;
+        else if(ch===delim){ cells.push(cur); cur=''; }
+        else cur+=ch;
+      }
+    }
+    cells.push(cur);
+    return cells.map(c=>c.trim());
+  }
+  return lines.map(parseLine);
+}
+
+function validateImportRow(fields, rowIndex){
+  const errors = [];
+  if(!fields.name) errors.push('nome ausente');
+  if(!fields.matricula) errors.push('matrícula ausente');
+  const role = matchEnumValue(fields.role, IMPORT_ROLE_OPTIONS);
+  if(!role) errors.push('função na CIPA inválida ("'+(fields.role||'')+'")');
+  const type = matchEnumValue(fields.type, IMPORT_TYPE_OPTIONS);
+  if(!type) errors.push('tipo inválido ("'+(fields.type||'')+'")');
+  const rep = matchEnumValue(fields.representationType, IMPORT_REP_OPTIONS);
+  if(!rep) errors.push('representação inválida ("'+(fields.representationType||'')+'")');
+  const dataPosse = parseFlexibleDate(fields.dataPosse);
+  return {rowIndex, name:fields.name, matricula:fields.matricula, jobTitle:fields.jobTitle||'', role, type, representationType:rep, dataPosse, errors};
+}
+
+function parseCSVMembers(text){
+  const table = parseCSVTable(text);
+  if(table.length===0) return [];
+  const header = table[0].map(normHeaderKey);
+  const idx = {
+    name: header.findIndex(h=>h==='nome'||h==='nomecompleto'),
+    matricula: header.findIndex(h=>h==='matricula'),
+    jobTitle: header.findIndex(h=>h==='cargo'||h==='cargofuncao'||h==='cargofunca'),
+    role: header.findIndex(h=>h==='funcaonacipa'||h==='funcao'),
+    type: header.findIndex(h=>h==='tipo'),
+    representationType: header.findIndex(h=>h==='representacao'),
+    dataPosse: header.findIndex(h=>h==='datadaposse'||h==='dataposse')
+  };
+  const rows = [];
+  for(let i=1;i<table.length;i++){
+    const cells = table[i];
+    if(cells.every(c=>!c || !c.trim())) continue;
+    const get = key => idx[key]>=0 ? (cells[idx[key]]||'').trim() : '';
+    rows.push(validateImportRow({
+      name: get('name'), matricula: get('matricula'), jobTitle: get('jobTitle'),
+      role: get('role'), type: get('type'), representationType: get('representationType'),
+      dataPosse: get('dataPosse')
+    }, i+1));
+  }
+  return rows;
+}
+
+function downloadMemberTemplate(){
+  const header = 'Nome completo;Matrícula;Cargo/Função;Função na CIPA;Tipo;Representação;Data da Posse';
+  const example = 'João da Silva;00123;Operador de Produção;Titular;Eleito;Empregados;15/03/2026';
+  const csv = '\uFEFF' + header + '\r\n' + example + '\r\n';
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'modelo_importacao_cipeiros.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------------- capability init ---------------- */
+/* ---------------- Firebase: banco, arquivos e login ---------------- */
+const COL_PREFIX = 'cipa_'; // todas as coleções do portal começam com cipa_ para não colidir com outros sistemas do projeto
+
+function buildAdapters(app){
+  const fdb = FS.initializeFirestore(app, {ignoreUndefinedProperties:true});
+  S.fdb = fdb;
+  S.db = {
+    collection: name => { const ref = FS.collection(fdb, COL_PREFIX+name); return {
+      onSnapshot: (next, err)=>FS.onSnapshot(ref, next, err),
+      add: data => FS.addDoc(ref, data)
+    };},
+    doc: path => { const p = path.split('/'); const ref = FS.doc(fdb, COL_PREFIX+p[0], p[1]); return {
+      onSnapshot: (next, err)=>FS.onSnapshot(ref, snap=>next({exists: snap.exists(), data: ()=>snap.data()}), err),
+      set: d=>FS.setDoc(ref, d),
+      update: d=>FS.updateDoc(ref, d),
+      delete: ()=>FS.deleteDoc(ref)
+    };}
+  };
+  // Arquivos: guardados no próprio Firestore em base64, divididos em pedaços (sem Storage, sem plano Blaze).
+  const CHUNK = 700000;                 // caracteres base64 por pedaço (~700 KB), abaixo do limite de 1 MiB por documento
+  const MAX_BYTES = 5 * 1024 * 1024;    // tamanho máximo por arquivo
+  const arqCol = () => FS.collection(fdb, COL_PREFIX+'arquivos');
+  const fileToBase64 = file => new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(String(r.result).split(',')[1] || '');
+    r.onerror = ()=>reject(new Error('Não foi possível ler o arquivo.'));
+    r.readAsDataURL(file);
+  });
+  async function chunksOf(id){
+    const snap = await FS.getDocs(FS.query(arqCol(), FS.where('fileId','==',id)));
+    return snap.docs.map(d=>d.data()).sort((x,y)=>x.idx-y.idx);
+  }
+  S.assets = {
+    maxBytes: MAX_BYTES,
+    async upload(file){
+      if(file.size > MAX_BYTES) throw new Error('O arquivo tem mais de 5 MB. Reduza ou comprima antes de enviar.');
+      const b64 = await fileToBase64(file);
+      const id = 'f'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      const total = Math.max(1, Math.ceil(b64.length/CHUNK));
+      const type = file.type || 'application/octet-stream';
+      try{
+        for(let i=0;i<total;i++){
+          await FS.setDoc(FS.doc(fdb, COL_PREFIX+'arquivos', id+'_'+String(i).padStart(3,'0')),
+            {fileId:id, idx:i, total, data:b64.slice(i*CHUNK,(i+1)*CHUNK), contentType:type, name:file.name});
+        }
+      }catch(e){ try{ await S.assets.delete(id); }catch(_){} throw e; }
+      return {id, url:'', contentType:type, sizeBytes:file.size};
+    },
+    async delete(id){
+      const snap = await FS.getDocs(FS.query(arqCol(), FS.where('fileId','==',id)));
+      await Promise.all(snap.docs.map(d=>FS.deleteDoc(d.ref)));
+    },
+    async open(id, name){
+      const parts = await chunksOf(id);
+      if(!parts.length) throw new Error('Arquivo não encontrado.');
+      const bin = atob(parts.map(p=>p.data).join(''));
+      const bytes = new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+      return {blob: new Blob([bytes], {type: parts[0].contentType}), name: name || parts[0].name || 'arquivo'};
+    }
+  };
+}
+
+function showAuth(html){
+  const root = document.getElementById('authRoot');
+  root.innerHTML = '<div class="auth-wrap"><div class="auth-card">'+html+'</div></div>';
+  root.style.display = 'block';
+}
+function hideAuth(){ const r = document.getElementById('authRoot'); r.style.display='none'; r.innerHTML=''; }
+
+function showLogin(){
+  showAuth(`
+    <div class="brand" style="padding:0 0 12px;"><span class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span> Portal CIPA</div>
+    <h2 style="margin:0 0 4px;font-size:20px;">Entrar</h2>
+    <div class="muted" style="font-size:13px;margin-bottom:16px;">Use o mesmo e-mail e senha dos sistemas do SESMT.</div>
+    <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;">
+      <div class="field"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="loginPass">Senha</label><input id="loginPass" type="password" autocomplete="current-password" required></div>
+      <div id="loginErr" style="color:var(--danger);font-size:13px;min-height:18px;" role="alert"></div>
+      <button class="btn btn-primary" type="submit" style="justify-content:center;">Entrar</button>
+      <button class="btn" type="button" id="loginReset" style="justify-content:center;">Esqueci a senha</button>
+    </form>`);
+  const err = document.getElementById('loginErr');
+  document.getElementById('loginForm').addEventListener('submit', async e=>{
+    e.preventDefault(); err.textContent='';
+    try{
+      await AU.signInWithEmailAndPassword(S.auth, document.getElementById('loginEmail').value.trim(), document.getElementById('loginPass').value);
+    }catch(ex){
+      const c = ex && ex.code || '';
+      err.textContent = (c==='auth/invalid-credential'||c==='auth/wrong-password'||c==='auth/user-not-found'||c==='auth/invalid-email') ? 'E-mail ou senha incorretos.'
+        : c==='auth/too-many-requests' ? 'Muitas tentativas. Aguarde alguns minutos e tente de novo.'
+        : 'Não foi possível entrar. Tente novamente.';
+    }
+  });
+  document.getElementById('loginReset').addEventListener('click', async ()=>{
+    const email = document.getElementById('loginEmail').value.trim();
+    if(!email){ err.textContent='Digite seu e-mail acima para receber o link de redefinição.'; return; }
+    try{ await AU.sendPasswordResetEmail(S.auth, email); err.style.color='var(--ok)'; err.textContent='Enviamos um link de redefinição para o seu e-mail.'; }
+    catch(ex){ err.style.color='var(--danger)'; err.textContent='Não foi possível enviar o e-mail de redefinição.'; }
+  });
+}
+
+function showNoAccess(user){
+  showAuth(`
+    <h2 style="margin:0 0 8px;font-size:20px;">Sem acesso ao Portal CIPA</h2>
+    <div class="muted" style="font-size:14px;margin-bottom:16px;">A conta <b>${esc(user.email||'')}</b> ainda não foi liberada para este sistema. Peça ao administrador do SESMT para liberar seu acesso.</div>
+    <button class="btn" id="btnLogoutNoAccess" style="width:100%;justify-content:center;">Sair</button>`);
+  document.getElementById('btnLogoutNoAccess').addEventListener('click', ()=>AU.signOut(S.auth));
+}
+
+async function openStoredFile(id, name){
+  const win = window.open('about:blank', '_blank');
+  try{
+    const f = await S.assets.open(id, name);
+    const url = URL.createObjectURL(f.blob);
+    if(win){ win.location.href = url; }
+    else { const a = document.createElement('a'); a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+  }catch(e){
+    if(win) win.close();
+    toast('Não foi possível abrir o arquivo: '+(e.message||e), 'err');
+  }
+}
+
+function stopListeners(){
+  S.unsub.forEach(fn=>{ try{ fn(); }catch(e){} });
+  S.unsub = []; S.started = false;
+}
+
+async function initCapabilities(){
+  let app;
+  try{
+    app = initializeApp(firebaseConfig);
+    S.auth = AU.getAuth(app);
+    buildAdapters(app);
+  }catch(e){
+    console.error(e);
+    document.getElementById('content').innerHTML = '<div class="empty">Configuração do Firebase ausente ou inválida.<br>Confira o arquivo public/firebase-config.js.</div>';
+    return;
+  }
+  AU.onAuthStateChanged(S.auth, async user=>{
+    if(!user){ stopListeners(); document.getElementById('userFooter').innerHTML=''; showLogin(); return; }
+    let ok = !exigirLiberacao;
+    if(exigirLiberacao){
+      try{
+        const snap = await FS.getDoc(FS.doc(S.fdb, 'sesmt_acessos', user.uid));
+        ok = snap.exists() && snap.data().cipa === true;
+      }catch(e){ console.error(e); }
+    }
+    if(!ok){ stopListeners(); showNoAccess(user); return; }
+    hideAuth();
+    renderUserFooter(user);
+    if(!S.started){ S.started = true; subscribeAll(); }
+  });
+}
+
+function renderUserFooter(user){
+  const el = document.getElementById('userFooter');
+  if(!user){ el.innerHTML=''; return; }
+  const name = user.displayName || user.email || 'Usuário';
+  const initials = name.split(/[\s@.]+/).filter(Boolean).slice(0,2).map(p=>p[0].toUpperCase()).join('');
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;">${esc(initials)}</div>
+    <div style="min-width:0;flex:1;font-size:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(name)}">${esc(name)}</div>
+    <button class="btn btn-sm" id="btnLogout">Sair</button></div>`;
+  document.getElementById('btnLogout').addEventListener('click', ()=>AU.signOut(S.auth));
+}
+
+/* ---------------- subscriptions ---------------- */
+function subscribeAll(){
+  const cols = [
+    ['units', d => { S.units = d; S.ready.units = true; renderSidebar(); renderMain(); }],
+    ['mandates', d => { S.mandates = d; renderMain(); }],
+    ['members', d => { S.members = d; renderMain(); }],
+    ['documents', d => { S.documents = d; renderMain(); }],
+    ['trainings', d => { S.trainings = d; renderMain(); }],
+    ['technicians', d => { S.technicians = d; renderMain(); }]
+  ];
+  cols.forEach(([name, cb])=>{
+    const unsub = S.db.collection(name).onSnapshot(
+      snap => { cb(snap.docs.map(d=>({id:d.id, ...d.data()}))); },
+      err => { console.error(name, err); if(err.code!=='unavailable') toast('Erro ao carregar '+name+': '+err.message, 'err'); }
+    );
+    S.unsub.push(unsub);
+  });
+  const unsubDim = S.db.doc('config/dimensionamento').onSnapshot(
+    snap => { S.dimensionamento = snap.exists ? snap.data() : null; renderMain(); },
+    err => { console.error('dimensionamento', err); }
+  );
+  S.unsub.push(unsubDim);
+}
+
+/* ---------------- writes ---------------- */
+async function dbAdd(col, data){
+  if(!S.db) return null;
+  try{
+    const ref = await S.db.collection(col).add({...data, createdAt: new Date().toISOString()});
+    return ref.id;
+  }catch(e){
+    toast('Não foi possível salvar: ' + (e.message||e.code), 'err');
+    return null;
+  }
+}
+async function dbSet(col, id, data){
+  try{ await S.db.doc(col+'/'+id).set(data); return true; }
+  catch(e){ toast('Não foi possível salvar: '+(e.message||e.code), 'err'); return false; }
+}
+async function dbUpdate(col, id, data){
+  try{ await S.db.doc(col+'/'+id).update(data); return true; }
+  catch(e){ toast('Não foi possível atualizar: '+(e.message||e.code), 'err'); return false; }
+}
+async function dbDelete(col, id){
+  try{ await S.db.doc(col+'/'+id).delete(); return true; }
+  catch(e){ toast('Não foi possível excluir: '+(e.message||e.code), 'err'); return false; }
+}
+
+/* ---------------- derived data helpers ---------------- */
+function unitMandates(unitId){
+  return S.mandates.filter(m=>m.unitId===unitId).sort((a,b)=>(b.startDate||'').localeCompare(a.startDate||''));
+}
+function mandateMembers(mandateId){
+  return S.members.filter(m=>m.mandateId===mandateId);
+}
+function unitDocuments(unitId, mandateId){
+  return S.documents.filter(d=>d.unitId===unitId && (!mandateId || d.mandateId===mandateId));
+}
+function memberTrainings(memberId){
+  return S.trainings.filter(t=>t.memberId===memberId);
+}
+function unitTechnicians(unitId){
+  const unit = byId(S.units, unitId);
+  if(!unit || !unit.technicianId) return [];
+  const t = byId(S.technicians, unit.technicianId);
+  return t ? [t] : [];
+}
+function activeMandate(unitId){
+  const list = unitMandates(unitId);
+  const today = todayISO();
+  return list.find(m => m.startDate<=today && (!m.endDate || m.endDate>=today)) || list[0] || null;
+}
+
+// consecutive mandate check: mesmo nome completo + matrícula, na mesma unidade, no mandato imediatamente anterior
+function checkConsecutive(unitId, name, matricula, currentMandateId){
+  if(!name || !matricula) return null;
+  const list = unitMandates(unitId);
+  const idx = list.findIndex(m=>m.id===currentMandateId);
+  if(idx === -1 || idx+1 >= list.length) return null;
+  const prevMandate = list[idx+1]; // sorted desc, so next index = immediately previous mandate
+  const prevMembers = mandateMembers(prevMandate.id);
+  const match = prevMembers.find(mm => normStr(mm.name)===normStr(name) && normStr(mm.matricula)===normStr(matricula) && mm.matricula);
+  if(match) return {prevMandate, match};
+  return null;
+}
+
+/* ---------------- Estabilidade provisória (Art. 10, II, "a" do ADCT) ---------------- */
+// Aplica-se a membros ELEITOS pelos EMPREGADOS (titulares e suplentes) — não a indicados pelo empregador.
+// Vigência: do início do mandato (aproximação do registro da candidatura) até 1 ano após o fim do mandato.
+function memberHasStability(member){
+  return member.representationType==='Empregados' && member.type==='Eleito';
+}
+function memberStabilityPeriod(member, mandate){
+  if(!memberHasStability(member)) return null;
+  const start = member.dataPosse || (mandate && mandate.startDate) || null;
+  if(!start) return null;
+  const end = addYearsISO(start, 2);
+  return {start, end, active: todayISO() <= end, approximated: !member.dataPosse};
+}
+function stabilityCellHtml(member, mandate){
+  if(!memberHasStability(member)) return '<span class="faint">não se aplica</span>';
+  const stab = memberStabilityPeriod(member, mandate);
+  if(!stab) return '<span class="pill pill-warn">informe a data da posse</span>';
+  const approxNote = stab.approximated ? ' <span class="faint">(estimado)</span>' : '';
+  return (stab.active
+    ? `<span class="pill pill-ok">vigente até ${fmtDate(stab.end)}</span>`
+    : `<span class="pill pill-muted">encerrada em ${fmtDate(stab.end)}</span>`) + approxNote;
+}
+
+function mandateRenewalAlert(m){
+  if(!m.endDate) return null;
+  const d = daysBetween(todayISO(), m.endDate);
+  const hasRenewal = !!(m.renewal && m.renewal.stages && m.renewal.stages.length);
+  const renewalDone = hasRenewal && m.renewal.status === 'concluido';
+  if(renewalDone) return null; // processo já concluído — sem alerta
+  if(m.startDate && m.startDate >= m.endDate){
+    return {level:'danger', label:'Datas inválidas', invalid:true, text:'As datas do mandato estão invertidas ('+fmtDate(m.startDate)+' – '+fmtDate(m.endDate)+'). Edite o mandato e corrija o início e o fim.'};
+  }
+  if(d < 0){
+    return {level:'danger', label:'Vencido', text:'Mandato vencido em '+fmtDate(m.endDate)+' — regularizar renovação imediatamente.'};
+  }
+  if(d <= PROCESS_LEAD_DAYS){
+    if(hasRenewal){
+      return {level:'warn', label:'Em andamento', text:'Mandato encerra em '+d+' dia(s) ('+fmtDate(m.endDate)+') — processo de renovação em andamento.'};
+    }
+    return {level:'danger', label:'Vencido', text:'Prazo para iniciar o processo de renovação está vencido — faltam '+d+' dia(s) para o fim do mandato ('+fmtDate(m.endDate)+') e o processo eleitoral ainda não foi iniciado, conforme a NR-05.'};
+  }
+  if(d <= ALERT_LEAD_DAYS){
+    return {level:'warn', label:'Renovar em breve', text:'Mandato encerra em '+d+' dia(s) ('+fmtDate(m.endDate)+') — próximo da renovação. Inicie o processo eleitoral conforme a NR-05.'};
+  }
+  return null;
+}
+
+/* ---------------- progresso / status de um processo de renovação ---------------- */
+function renewalProgress(renewal){
+  const total = renewal.stages.length;
+  const done = renewal.stages.filter(s=>s.done).length;
+  return {done, total};
+}
+function renewalStatusInfo(renewal){
+  const {done, total} = renewalProgress(renewal);
+  if(renewal.status==='concluido' || (total>0 && done>=total)) return {level:'ok', text:'Concluído'};
+  const today = todayISO();
+  const late = renewal.stages.some(s=>{
+    if(s.done) return false;
+    const ref = s.type==='single' ? s.date : s.endDate;
+    return ref && ref < today;
+  });
+  if(late) return {level:'danger', text:'Atrasado'};
+  return {level:'warn', text:'Em andamento'};
+}
+function allRenewalProcesses(){
+  return S.mandates.filter(m=>m.renewal && m.renewal.stages && m.renewal.stages.length)
+    .map(m=>({mandate:m, unit:byId(S.units, m.unitId)}))
+    .sort((a,b)=>(a.mandate.endDate||'').localeCompare(b.mandate.endDate||''));
+}
+
+/* ---------------- cronograma de renovação (NR-05) ---------------- */
+const RENEWAL_STAGE_DEFS = [
+  {key:'edital', label:'Publicação do Edital de Convocação', type:'single'},
+  {key:'inscricao', label:'Período de Inscrição de Candidatos', type:'range'},
+  {key:'divulgacao_inscritos', label:'Divulgação dos Candidatos Inscritos', type:'single'},
+  {key:'campanha', label:'Campanha Eleitoral', type:'range'},
+  {key:'eleicao', label:'Eleição (Votação)', type:'single'},
+  {key:'apuracao', label:'Apuração e Divulgação do Resultado', type:'single'},
+  {key:'posse', label:'Posse da Nova CIPA', type:'single'}
+];
+
+function generateAutoRenewalStages(mandate){
+  const day0 = addDaysISO(mandate.endDate, -PROCESS_LEAD_DAYS);
+  return [
+    {key:'edital', label:'Publicação do Edital de Convocação', type:'single', date: day0, done:false},
+    {key:'inscricao', label:'Período de Inscrição de Candidatos', type:'range', startDate: day0, endDate: addDaysISO(day0, INSCRICAO_DIAS), done:false},
+    {key:'divulgacao_inscritos', label:'Divulgação dos Candidatos Inscritos', type:'single', date: addDaysISO(day0, INSCRICAO_DIAS+2), done:false},
+    {key:'campanha', label:'Campanha Eleitoral', type:'range', startDate: addDaysISO(day0, INSCRICAO_DIAS+2), endDate: addDaysISO(day0, PROCESS_LEAD_DAYS-15), done:false},
+    {key:'eleicao', label:'Eleição (Votação)', type:'single', date: addDaysISO(day0, PROCESS_LEAD_DAYS-13), done:false},
+    {key:'apuracao', label:'Apuração e Divulgação do Resultado', type:'single', date: addDaysISO(day0, PROCESS_LEAD_DAYS-11), done:false},
+    {key:'posse', label:'Posse da Nova CIPA', type:'single', date: mandate.endDate, done:false}
+  ];
+}
+function generateManualRenewalStages(){
+  return RENEWAL_STAGE_DEFS.map(s => s.type==='range' ? {...s, startDate:'', endDate:'', done:false} : {...s, date:'', done:false});
+}
+
+/* ---------------- Dimensionamento da CIPA (Quadro I — NR-05, Anexo I) ---------------- */
+const DEFAULT_DIMENSIONAMENTO = {
+  brackets: ['0 a 19','20 a 29','30 a 50','51 a 80','81 a 100','101 a 120','121 a 140','141 a 300','301 a 500','501 a 1000','1001 a 2500','2501 a 5000','5001 a 10000'],
+  bracketMax: [19,29,50,80,100,120,140,300,500,1000,2500,5000,10000],
+  matrix: {
+    1: {efetivos:[null,null,null,null,1,1,1,1,2,4,5,6,8],  suplentes:[null,null,null,null,1,1,1,1,2,3,4,5,6]},
+    2: {efetivos:[null,null,null,1,1,2,2,3,4,5,6,8,10],    suplentes:[null,null,null,1,1,1,1,2,3,4,5,6,8]},
+    3: {efetivos:[null,1,1,2,2,2,3,4,5,6,8,10,12],         suplentes:[null,1,1,1,1,1,2,2,4,4,6,8,8]},
+    4: {efetivos:[null,1,2,3,3,4,4,4,5,6,9,11,13],         suplentes:[null,1,1,2,2,2,2,3,4,5,7,8,10]}
+  },
+  extra: {1:{efetivos:1,suplentes:1}, 2:{efetivos:1,suplentes:1}, 3:{efetivos:2,suplentes:2}, 4:{efetivos:2,suplentes:2}}
+};
+
+function effectiveDimConfig(){ return S.dimensionamento || DEFAULT_DIMENSIONAMENTO; }
+
+function findBracketIndex(config, n){
+  for(let i=0;i<config.bracketMax.length;i++){ if(n<=config.bracketMax[i]) return i; }
+  return config.bracketMax.length-1;
+}
+
+function calcDimensionamento(config, grau, n){
+  const g = config.matrix[grau];
+  if(!g || n==null || isNaN(n) || n<0) return null;
+  if(n>10000){
+    const lastIdx = config.bracketMax.length-1;
+    const baseEf = g.efetivos[lastIdx]||0, baseSu = g.suplentes[lastIdx]||0;
+    const groups = Math.ceil((n-10000)/2500);
+    const ex = config.extra[grau]||{efetivos:0,suplentes:0};
+    return {efetivos: baseEf+ex.efetivos*groups, suplentes: baseSu+ex.suplentes*groups, bracketLabel:'Acima de 10.000 (+'+groups+' grupo(s) de 2.500)'};
+  }
+  const idx = findBracketIndex(config, n);
+  const ef=g.efetivos[idx], su=g.suplentes[idx];
+  return {efetivos: ef||0, suplentes: su||0, bracketLabel: config.brackets[idx], notRequired: ef==null && su==null};
+}
+
+function trainingExpiryAlert(t){
+  if(!t.expiryDate) return null;
+  const d = daysBetween(todayISO(), t.expiryDate);
+  if(d < 0) return {level:'danger', text:'Certificado vencido em '+fmtDate(t.expiryDate)+'.'};
+  if(d <= 45) return {level:'warn', text:'Certificado vence em '+d+' dia(s) ('+fmtDate(t.expiryDate)+').'};
+  return null;
+}
+
+function computeAllAlerts(){
+  const alerts = [];
+  S.units.forEach(u=>{
+    const curM = activeMandate(u.id);
+    unitMandates(u.id).forEach(m=>{
+      if(!curM || m.id!==curM.id) return; // gestões antigas não geram alertas
+      const ra = mandateRenewalAlert(m);
+      if(ra) alerts.push({...ra, unit:u, mandate:m, type:'renewal'});
+      mandateMembers(m.id).forEach(mem=>{
+        if(mem.consecutiveAlert){
+          alerts.push({level:'warn', text:'2º mandato consecutivo possível: '+mem.name+' (verificar elegibilidade conforme NR-05).', unit:u, mandate:m, member:mem, type:'consecutive'});
+        }
+      });
+    });
+  });
+  S.trainings.forEach(t=>{
+    const ta = trainingExpiryAlert(t);
+    if(ta){
+      const mem = byId(S.members, t.memberId);
+      alerts.push({...ta, member:mem, unit: mem ? byId(S.units, mem.unitId) : null, training:t, type:'training'});
+    }
+  });
+  return alerts;
+}
+
+/* ---------------- rendering: sidebar ---------------- */
+function renderSidebar(){
+  const el = document.getElementById('unitList');
+  if(!S.ready.units) return;
+  const navEl = document.getElementById('globalNav');
+  if(navEl){
+    const activeProcesses = allRenewalProcesses().filter(p=>renewalStatusInfo(p.mandate.renewal).level!=='ok').length;
+    const NAV = [
+      {id:'dashboard', label:'Painel', icon:'painel'},
+      {id:'renewals', label:'Renovações', icon:'renovar', badge:activeProcesses},
+      {id:'dimensionamento', label:'Dimensionamento', icon:'calc'},
+      {id:'relatorios', label:'Relatórios', icon:'relat'}
+    ];
+    navEl.innerHTML = NAV.map(n=>`<div class="unit-item ${!S.currentUnitId && S.globalView===n.id ? 'active':''}" data-nav="${n.id}">
+      <span>${ico(n.icon)}${n.label}</span>
+      ${n.badge? `<span class="badge-count" style="background:var(--warn-soft);color:var(--warn);">${n.badge}</span>` : ''}
+    </div>`).join('');
+    navEl.querySelectorAll('[data-nav]').forEach(item=>{
+      item.addEventListener('click', ()=>{ S.currentUnitId=null; S.globalView=item.dataset.nav; renderSidebar(); renderMain(); });
+    });
+  }
+  if(S.units.length===0){
+    el.innerHTML = '<div class="faint" style="padding:8px 12px;">Nenhuma unidade cadastrada.</div>';
+    return;
+  }
+  const allAlerts = computeAllAlerts();
+  el.innerHTML = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(u=>{
+    const alertCount = allAlerts.filter(a=>a.unit && a.unit.id===u.id).length;
+    return `<div class="unit-item ${u.id===S.currentUnitId?'active':''}" data-unit="${u.id}">
+      <span>${ico('predio')}${esc(u.name)}</span>
+      ${alertCount? `<span class="badge-count" style="background:var(--danger-soft);color:var(--danger);">${alertCount}</span>` : ''}
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.unit-item').forEach(item=>{
+    item.addEventListener('click', ()=>{ S.currentUnitId = item.dataset.unit; S.currentTab='visao'; renderSidebar(); renderMain(); });
+  });
+}
+
+/* ---------------- tabs (seções da unidade) ---------------- */
+const TABS = [
+  {id:'visao', label:'Visão geral'},
+  {id:'mandatos', label:'Mandatos'},
+  {id:'membros', label:'Membros'},
+  {id:'documentos', label:'Documentos'},
+  {id:'treinamentos', label:'Treinamentos'},
+  {id:'alertas', label:'Alertas'}
+];
+
+function renderTabs(){
+  const wrap = document.getElementById('tabs');
+  if(!S.currentUnitId){ wrap.innerHTML=''; wrap.style.display='none'; return; }
+  wrap.style.display = 'flex';
+  const alertCount = computeAllAlerts().filter(a=>a.unit && a.unit.id===S.currentUnitId).length;
+  wrap.innerHTML = TABS.map(t=>{
+    return `<div class="tab ${S.currentTab===t.id?'active':''}" data-tab="${t.id}">${t.label}${t.id==='alertas' && alertCount>0?`<span class="tab-count">${alertCount}</span>`:''}</div>`;
+  }).join('');
+  wrap.querySelectorAll('.tab').forEach(el=>{
+    el.addEventListener('click', ()=>{ S.currentTab = el.dataset.tab; renderMain(); });
+  });
+}
+
+/* ---------------- main render router ---------------- */
+function renderMain(){
+  renderTabs();
+  const title = document.getElementById('pageTitle');
+  const sub = document.getElementById('pageSub');
+  const content = document.getElementById('content');
+  const editBtn = document.getElementById('btnEditUnit');
+
+  if(!S.currentUnitId){
+    editBtn.style.display = 'none';
+    if(S.globalView==='renewals'){
+      title.textContent = 'Processos de renovação';
+      sub.textContent = 'Acompanhe cada processo eleitoral até a posse da nova CIPA, em todas as unidades.';
+      content.innerHTML = renderRenewalsDashboard();
+      bindRenewalsDashboard();
+      return;
+    }
+    if(S.globalView==='dimensionamento'){
+      title.textContent = 'Dimensionamento';
+      sub.textContent = 'Calculadora e tabela de dimensionamento da CIPA, válida para todas as unidades (Quadro I — NR-05).';
+      content.innerHTML = renderDimensionamento();
+      bindDimensionamentoEvents();
+      return;
+    }
+    if(S.globalView==='relatorios'){
+      title.textContent = 'Relatórios';
+      sub.textContent = 'Relatórios gerais (todas as unidades) ou individuais (uma unidade específica).';
+      content.innerHTML = renderRelatorios();
+      bindRelatoriosEvents();
+      return;
+    }
+    title.textContent = 'Painel';
+    sub.textContent = S.units.length ? 'Situação das CIPAs de todas as unidades · '+fmtDate(todayISO()) : 'Cadastre sua primeira unidade para começar.';
+    content.innerHTML = renderGlobalDashboard();
+    bindGlobalDashboard();
+    return;
+  }
+  const unit = byId(S.units, S.currentUnitId);
+  if(!unit){ S.currentUnitId=null; renderMain(); return; }
+  title.textContent = unit.name;
+  editBtn.style.display = 'inline-flex';
+  editBtn.onclick = ()=>openUnitModal(unit);
+  const am = activeMandate(unit.id);
+  sub.textContent = am ? 'Mandato atual: '+fmtDate(am.startDate)+' – '+fmtDate(am.endDate) : 'Nenhum mandato cadastrado ainda';
+
+  let html = '';
+  if(S.currentTab==='visao') html = renderVisaoGeral(unit);
+  else if(S.currentTab==='mandatos') html = renderMandatos(unit);
+  else if(S.currentTab==='membros') html = renderMembros(unit);
+  else if(S.currentTab==='documentos') html = renderDocumentos(unit);
+  else if(S.currentTab==='treinamentos') html = renderTreinamentos(unit);
+  else if(S.currentTab==='alertas') html = renderAlertasTab(unit);
+  content.innerHTML = html;
+  bindTabEvents(unit);
+}
+
+/* ---------------- global dashboard (no unit selected) ---------------- */
+function unitStatusPill(unitId){
+  const am = activeMandate(unitId);
+  if(!am) return '<span class="pill pill-muted">Sem mandato</span>';
+  if(am.renewal && am.renewal.stages && am.renewal.stages.length && am.renewal.status!=='concluido') return '<span class="pill pill-info">Em renovação</span>';
+  const ra = mandateRenewalAlert(am);
+  if(ra) return `<span class="pill ${ra.level==='danger'?'pill-danger':'pill-warn'}">${ra.label}</span>`;
+  return '<span class="pill pill-ok">Em dia</span>';
+}
+
+function handleRenewalAction(mandateId){
+  const mandate = byId(S.mandates, mandateId);
+  if(!mandate) return;
+  const unit = byId(S.units, mandate.unitId);
+  if(mandate.renewal && mandate.renewal.stages && mandate.renewal.stages.length){
+    openRenewalEditModal(unit, mandate, mandate.renewal.stages.map(s=>({...s})), mandate.renewal.mode);
+  } else {
+    openRenewalChoiceModal(unit, mandate);
+  }
+}
+function goUnitTab(spec){
+  const parts = spec.split('|');
+  S.currentUnitId = parts[0]; S.currentTab = parts[1] || 'visao';
+  renderSidebar(); renderMain();
+}
+
+function attentionRowHtml(a){
+  const unitName = a.unit ? esc(a.unit.name) : '';
+  let label, title, subtitle, action = '';
+  let pillCls = a.level==='danger' ? 'pill-danger' : 'pill-warn';
+  if(a.type==='renewal'){
+    label = a.label; title = a.text; subtitle = unitName;
+    if(a.label==='Em andamento') pillCls = 'pill-info';
+    if(a.invalid){
+      action = `<button class="btn" data-open-unit-tab="${a.unit.id}|mandatos">Corrigir mandato</button>`;
+    } else {
+      const has = a.mandate.renewal && a.mandate.renewal.stages && a.mandate.renewal.stages.length;
+      action = `<button class="btn ${has?'':'btn-primary'}" data-renewal-action="${a.mandate.id}">${has?'Gerenciar cronograma':'Iniciar renovação'}</button>`;
+    }
+  } else if(a.type==='consecutive'){
+    label = '2º mandato?';
+    title = esc(a.member.name)+' · matrícula '+esc(a.member.matricula||'—');
+    subtitle = unitName+' · esteve na gestão anterior, confira a elegibilidade';
+    action = `<button class="btn" data-open-unit-tab="${a.unit.id}|membros">Ver membro</button>`;
+  } else {
+    label = 'Certificado';
+    title = esc(a.training.courseName)+': '+a.text;
+    subtitle = unitName + (a.member ? ' · '+esc(a.member.name) : '');
+    action = a.unit ? `<button class="btn" data-open-unit-tab="${a.unit.id}|treinamentos">Ver treinamentos</button>` : '';
+  }
+  return `<div class="lrow">
+    <span class="pill ${pillCls}" style="justify-self:start;">${label}</span>
+    <div><div class="t">${title}</div><div class="s">${subtitle}</div></div>
+    <div>${action}</div>
+  </div>`;
+}
+
+function renderGlobalDashboard(){
+  if(S.units.length===0){
+    return `<div class="empty"><div class="big">${ico('predio','style="width:32px;height:32px"')}</div>Nenhuma unidade cadastrada ainda.<br><br><button class="btn btn-primary" id="btnAddUnitEmpty">${ico('plus')}Cadastrar primeira unidade</button></div>`;
+  }
+  const alerts = computeAllAlerts().slice().sort((a,b)=>(a.level==='danger'?0:1)-(b.level==='danger'?0:1));
+  const currentMembers = S.units.reduce((n,u)=>{ const am = activeMandate(u.id); return n + (am ? mandateMembers(am.id).length : 0); }, 0);
+  const processes = allRenewalProcesses().filter(p=>renewalStatusInfo(p.mandate.renewal).level!=='ok').length;
+
+  const attention = alerts.length
+    ? alerts.slice(0,8).map(attentionRowHtml).join('') + (alerts.length>8 ? `<div class="lrow"><span></span><div class="s">+ ${alerts.length-8} outro(s) — abra a unidade para ver todos</div><span></span></div>` : '')
+    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo nas unidades.</div><span></span></div>`;
+
+  const unitsRows = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(u=>{
+    const am = activeMandate(u.id);
+    const nMembers = am ? mandateMembers(am.id).length : 0;
+    const tech = unitTechnicians(u.id)[0];
+    return `<tr>
+      <td><b>${esc(u.name)}</b></td>
+      <td>${am ? fmtDate(am.startDate)+' – '+fmtDate(am.endDate) : '<span class="faint">sem mandato</span>'}</td>
+      <td>${nMembers}</td>
+      <td>${tech ? esc(tech.name) : '<span class="faint">não definido</span>'}</td>
+      <td>${unitStatusPill(u.id)}</td>
+      <td><button class="btn btn-sm" data-open-unit="${u.id}">Abrir</button></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="kpis">
+    <div class="kpi"><div class="num">${S.units.length}</div><div class="label">Unidades</div></div>
+    <div class="kpi"><div class="num">${currentMembers}</div><div class="label">Membros no mandato atual</div></div>
+    <div class="kpi"><div class="num">${processes}</div><div class="label">Renovações em andamento</div></div>
+    <div class="kpi"><div class="num" style="color:${alerts.length?'var(--danger)':'var(--ok)'}">${alerts.length}</div><div class="label">Alertas ativos</div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">Precisa de atenção</div>
+    ${attention}
+  </div>
+  <div class="panel">
+    <div class="panel-head">Unidades</div>
+    <table><thead><tr><th>Unidade</th><th>Mandato atual</th><th>Membros</th><th>Técnico responsável</th><th>Situação</th><th></th></tr></thead>
+    <tbody>${unitsRows}</tbody></table>
+  </div>`;
+}
+function bindGlobalDashboard(){
+  document.querySelectorAll('[data-open-unit]').forEach(b=>b.addEventListener('click', ()=>goUnitTab(b.dataset.openUnit+'|visao')));
+  document.querySelectorAll('[data-open-unit-tab]').forEach(b=>b.addEventListener('click', ()=>goUnitTab(b.dataset.openUnitTab)));
+  document.querySelectorAll('[data-renewal-action]').forEach(b=>b.addEventListener('click', ()=>handleRenewalAction(b.dataset.renewalAction)));
+  const btn = document.getElementById('btnAddUnitEmpty');
+  if(btn) btn.addEventListener('click', ()=>openUnitModal());
+}
+
+/* ---------------- Processos de renovação (todas as unidades) ---------------- */
+function stepperHtml(renewal, status){
+  const SHORT = {edital:'Edital', inscricao:'Inscrição', divulgacao_inscritos:'Inscritos', campanha:'Campanha', eleicao:'Eleição', apuracao:'Apuração', posse:'Posse'};
+  const stages = renewal.stages, n = stages.length;
+  const curIdx = stages.findIndex(st=>!st.done);
+  return `<div class="stepper" style="grid-template-columns:repeat(${n},minmax(0,1fr));">` + stages.map((st,i)=>{
+    const isDone = !!st.done, isCur = i===curIdx;
+    const late = isCur && status.level==='danger';
+    const dotCls = isDone ? 'done' : (isCur ? (late?'late':'cur') : '');
+    const leftCls = i===0 ? 'none' : (stages[i-1].done ? 'done' : '');
+    const rightCls = i===n-1 ? 'none' : (isDone ? 'done' : '');
+    const inner = isDone ? ico('check','style="width:14px;height:14px;stroke-width:2.5"') : (i+1);
+    return `<div class="step"><div class="track"><div class="ln ${leftCls}"></div><div class="dot ${dotCls}">${inner}</div><div class="ln ${rightCls}"></div></div><div class="slbl ${isCur?'cur':''}">${esc(SHORT[st.key]||st.label)}</div></div>`;
+  }).join('') + '</div>';
+}
+
+function renderRenewalsDashboard(){
+  const processes = allRenewalProcesses();
+  const emAndamento = processes.filter(p=>renewalStatusInfo(p.mandate.renewal).level!=='ok');
+  const concluidos = processes.filter(p=>renewalStatusInfo(p.mandate.renewal).level==='ok');
+
+  const awaiting = [];
+  S.units.forEach(u=>{
+    const m = activeMandate(u.id);
+    if(!m) return;
+    if(m.renewal && m.renewal.stages && m.renewal.stages.length) return;
+    const ra = mandateRenewalAlert(m);
+    if(ra && !ra.invalid) awaiting.push({mandate:m, unit:u, alert:ra});
+  });
+
+  function awaitingCard(x){
+    const d = daysBetween(todayISO(), x.mandate.endDate);
+    const when = d>=0 ? 'faltam '+d+' dia(s)' : 'encerrado há '+Math.abs(d)+' dia(s)';
+    return `<div class="card" style="padding:24px;">
+      <div class="row">
+        <div><div class="row-title" style="font-size:16px;">${esc(x.unit.name)}</div><div class="muted" style="font-size:13px;">Mandato ${fmtDate(x.mandate.startDate)} – ${fmtDate(x.mandate.endDate)} · ${when}</div></div>
+        <span class="pill ${x.alert.level==='danger'?'pill-danger':'pill-warn'}">${x.alert.label}</span>
+      </div>
+      <div style="margin:20px 0 14px; font-weight:500;">Como deseja montar o cronograma do processo eleitoral?</div>
+      <div class="opt-row">
+        <button class="opt" data-start-renewal="${x.mandate.id}" data-mode="auto"><div class="opt-title">${ico('calendario')}Gerar automaticamente</div><div class="opt-desc">Começa ${PROCESS_LEAD_DAYS} dias antes do fim do mandato, com ${INSCRICAO_DIAS} dias de inscrição. Você pode ajustar qualquer data depois.</div></button>
+        <button class="opt" data-start-renewal="${x.mandate.id}" data-mode="manual"><div class="opt-title">${ico('editar')}Preencher manualmente</div><div class="opt-desc">Mantém as mesmas etapas da NR-05, e você informa as datas de cada uma.</div></button>
+      </div>
+    </div>`;
+  }
+
+  function processCard(p){
+    const {mandate, unit} = p;
+    const renewal = mandate.renewal;
+    const {done, total} = renewalProgress(renewal);
+    const status = renewalStatusInfo(renewal);
+    const next = renewal.stages.find(st=>!st.done);
+    const pillCls = status.level==='ok'?'pill-ok':status.level==='danger'?'pill-danger':'pill-info';
+    return `<div class="card" style="padding:24px;">
+      <div class="row">
+        <div>
+          <div class="row-title" style="font-size:16px;">${unit? esc(unit.name) : '<span class="faint">Unidade removida</span>'}</div>
+          <div class="muted" style="font-size:13px;">Mandato ${fmtDate(mandate.startDate)} – ${fmtDate(mandate.endDate)} · cronograma ${renewal.mode==='auto'?'automático':'manual'} · ${done} de ${total} etapas</div>
+        </div>
+        <span class="pill ${pillCls}">${status.text}</span>
+      </div>
+      ${stepperHtml(renewal, status)}
+      <div class="row" style="margin-top:12px;">
+        <div class="muted" style="font-size:13px;">${next ? 'Próxima etapa: '+esc(next.label) : 'Todas as etapas concluídas'}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${unit? `<button class="btn" data-open-unit-renewals="${unit.id}">Ver unidade</button>` : ''}
+          <button class="btn btn-primary" data-manage-renewal="${mandate.id}">Gerenciar cronograma</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  if(!awaiting.length && !processes.length){
+    return `<div class="empty"><div class="big">${ico('renovar','style="width:32px;height:32px"')}</div>Nenhuma renovação pendente no momento.<br>Quando um mandato estiver a 70 dias do fim, ele aparece aqui para você iniciar o processo.</div>`;
+  }
+  let html = '';
+  if(awaiting.length) html += `<h2 class="sect-title">Aguardando início</h2>` + awaiting.map(awaitingCard).join('') + '<div style="height:16px;"></div>';
+  if(emAndamento.length) html += `<h2 class="sect-title">Em andamento</h2>` + emAndamento.map(processCard).join('');
+  if(concluidos.length) html += `<h2 class="sect-title" style="margin-top:24px;">Concluídos</h2>` + concluidos.map(processCard).join('');
+  return html;
+}
+function bindRenewalsDashboard(){
+  document.querySelectorAll('[data-manage-renewal]').forEach(el=>el.addEventListener('click', ()=>handleRenewalAction(el.dataset.manageRenewal)));
+  document.querySelectorAll('[data-open-unit-renewals]').forEach(el=>el.addEventListener('click', ()=>goUnitTab(el.dataset.openUnitRenewals+'|mandatos')));
+  document.querySelectorAll('[data-start-renewal]').forEach(el=>el.addEventListener('click', ()=>{
+    const mandate = byId(S.mandates, el.dataset.startRenewal);
+    if(!mandate) return;
+    const unit = byId(S.units, mandate.unitId);
+    if(el.dataset.mode==='auto') openRenewalEditModal(unit, mandate, generateAutoRenewalStages(mandate), 'auto');
+    else openRenewalEditModal(unit, mandate, generateManualRenewalStages(), 'manual');
+  }));
+}
+
+/* ---------------- Relatórios (gerais ou individuais) ---------------- */
+function renderStabilityTable(rows){
+  if(rows.length===0) return `<div class="faint">Nenhum membro.</div>`;
+  return `<table><thead><tr><th>Nome</th><th>Unidade</th><th>Função</th><th>Representação</th><th>Estabilidade</th></tr></thead><tbody>
+  ${rows.map(({member,mandate,unit})=>`<tr>
+    <td><b>${esc(member.name)}</b>${member.matricula?`<div class="faint">Matrícula: ${esc(member.matricula)}</div>`:''}</td>
+    <td>${esc(unit.name)}</td>
+    <td>${esc(member.role||'—')}</td>
+    <td>${esc(member.representationType||'—')}</td>
+    <td>${stabilityCellHtml(member, mandate)}</td>
+  </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function renderRelatorioGeral(){
+  const alerts = computeAllAlerts();
+  const processes = allRenewalProcesses();
+  const stabilityRows = S.units.flatMap(u=>{
+    const am = activeMandate(u.id);
+    if(!am) return [];
+    return mandateMembers(am.id).map(mm=>({member:mm, mandate:am, unit:u}));
+  });
+  const unitsRows = S.units.map(u=>{
+    const am = activeMandate(u.id);
+    const members = am ? mandateMembers(am.id) : [];
+    const tech = unitTechnicians(u.id)[0];
+    const uAlerts = alerts.filter(a=>a.unit && a.unit.id===u.id).length;
+    return `<tr>
+      <td><b>${esc(u.name)}</b></td>
+      <td>${am? fmtDate(am.startDate)+' – '+fmtDate(am.endDate) : '<span class="faint">sem mandato</span>'}</td>
+      <td>${members.length}</td>
+      <td>${tech? esc(tech.name) : '<span class="faint">não definido</span>'}</td>
+      <td>${uAlerts? `<span class="pill pill-danger">${uAlerts}</span>` : '<span class="pill pill-ok">0</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="card">
+    <h3>Relatório geral — Portal CIPA</h3>
+    <div class="faint" style="margin-bottom:10px;">Gerado em ${fmtDate(todayISO())}</div>
+    <div class="grid">
+      <div class="stat"><div class="num">${S.units.length}</div><div class="label">Unidades</div></div>
+      <div class="stat"><div class="num">${stabilityRows.length}</div><div class="label">Membros no mandato atual</div></div>
+      <div class="stat"><div class="num" style="color:${alerts.length?'var(--danger)':'var(--ok)'}">${alerts.length}</div><div class="label">Alertas ativos</div></div>
+      <div class="stat"><div class="num">${processes.length}</div><div class="label">Processos de renovação</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Unidades</h3>
+    <table><thead><tr><th>Unidade</th><th>Mandato atual</th><th>Membros</th><th>Técnico responsável</th><th>Alertas</th></tr></thead>
+    <tbody>${unitsRows || `<tr><td colspan="5" class="faint">Nenhuma unidade cadastrada.</td></tr>`}</tbody></table>
+  </div>
+  <div class="card">
+    <h3>Membros em estabilidade provisória — mandato atual (todas as unidades)</h3>
+    ${renderStabilityTable(stabilityRows)}
+  </div>`;
+}
+
+function renderRelatorioUnidade(unit){
+  const mandates = unitMandates(unit.id);
+  const am = activeMandate(unit.id) || mandates[0] || null;
+  const tech = unitTechnicians(unit.id)[0];
+  const alerts = computeAllAlerts().filter(a=>a.unit && a.unit.id===unit.id);
+  const docs = unitDocuments(unit.id);
+  const memberIds = new Set();
+  mandates.forEach(m=>mandateMembers(m.id).forEach(mm=>memberIds.add(mm.id)));
+  const trainings = S.trainings.filter(t=>memberIds.has(t.memberId));
+
+  return `
+  <div class="card">
+    <h3>Relatório individual — ${esc(unit.name)}</h3>
+    <div class="faint" style="margin-bottom:10px;">Gerado em ${fmtDate(todayISO())}${unit.cnpj?' · CNPJ '+esc(unit.cnpj):''}</div>
+    <div class="grid">
+      <div class="stat"><div class="num">${am? mandateMembers(am.id).length : 0}</div><div class="label">Membros no mandato atual</div></div>
+      <div class="stat"><div class="num">${docs.length}</div><div class="label">Documentos</div></div>
+      <div class="stat"><div class="num" style="color:${alerts.length?'var(--danger)':'var(--ok)'}">${alerts.length}</div><div class="label">Alertas ativos</div></div>
+      <div class="stat"><div class="num">${trainings.length}</div><div class="label">Treinamentos registrados</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Técnico responsável</h3>
+    ${tech ? `<div><b>${esc(tech.name)}</b><div class="faint">${esc(tech.type||'')}${tech.registrationNumber?' · Registro: '+esc(tech.registrationNumber):''}${tech.contact?' · '+esc(tech.contact):''}</div></div>` : `<div class="faint">Nenhum técnico responsável definido.</div>`}
+  </div>
+  ${alerts.length ? `<div class="card"><h3>Alertas</h3>${alerts.map(alertBoxHtml).join('')}</div>` : `<div class="card"><span class="pill pill-ok">Sem alertas pendentes</span></div>`}
+  <div class="card">
+    <h3>Membros — mandato atual ${am? '('+fmtDate(am.startDate)+' – '+fmtDate(am.endDate)+')' : ''}</h3>
+    ${am ? renderStabilityTable(mandateMembers(am.id).map(mm=>({member:mm, mandate:am, unit}))) : `<div class="faint">Nenhum mandato cadastrado.</div>`}
+  </div>
+  <div class="card">
+    <h3>Histórico de gestões</h3>
+    <table><thead><tr><th>Período</th><th>Status</th><th>Membros</th></tr></thead><tbody>
+    ${mandates.map(m=>`<tr><td>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</td><td>${esc(m.status||'ativo')}</td><td>${mandateMembers(m.id).length}</td></tr>`).join('') || `<tr><td colspan="3" class="faint">Nenhum mandato cadastrado.</td></tr>`}
+    </tbody></table>
+  </div>`;
+}
+
+function renderRelatorios(){
+  const tipo = S._relatorioTipo || 'geral';
+  if(!S._relatorioUnitId && S.units.length) S._relatorioUnitId = S.units[0].id;
+  const unitId = S._relatorioUnitId;
+  let body;
+  if(tipo==='individual'){
+    const unit = byId(S.units, unitId);
+    body = unit ? renderRelatorioUnidade(unit) : `<div class="empty">Cadastre uma unidade para gerar este relatório.</div>`;
+  } else {
+    body = renderRelatorioGeral();
+  }
+  return `
+  <div class="card no-print">
+    <div class="row" style="gap:10px; flex-wrap:wrap;">
+      <div class="field" style="min-width:210px;">
+        <label>Tipo de relatório</label>
+        <select id="relTipo">
+          <option value="geral" ${tipo==='geral'?'selected':''}>Geral (todas as unidades)</option>
+          <option value="individual" ${tipo==='individual'?'selected':''}>Individual (uma unidade)</option>
+        </select>
+      </div>
+      ${tipo==='individual' ? `<div class="field" style="min-width:220px;">
+        <label>Unidade</label>
+        <select id="relUnit">${S.units.map(u=>`<option value="${u.id}" ${u.id===unitId?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+      </div>` : ''}
+      <button class="btn btn-primary" id="btnPrintReport" style="margin-left:auto; align-self:flex-end;">${ico('impressora')}Imprimir / Exportar PDF</button>
+    </div>
+  </div>
+  <div id="reportContent">${body}</div>`;
+}
+
+function bindRelatoriosEvents(){
+  const selTipo = document.getElementById('relTipo');
+  if(selTipo) selTipo.addEventListener('change', e=>{ S._relatorioTipo = e.target.value; renderMain(); });
+  const selUnit = document.getElementById('relUnit');
+  if(selUnit) selUnit.addEventListener('change', e=>{ S._relatorioUnitId = e.target.value; renderMain(); });
+  const btnPrint = document.getElementById('btnPrintReport');
+  if(btnPrint) btnPrint.addEventListener('click', ()=>window.print());
+}
+
+/* ---------------- Visão geral (unit) ---------------- */
+function raPillCls(ra){
+  if(ra.level==='danger') return 'pill-danger';
+  if(ra.label==='Em andamento') return 'pill-info';
+  return 'pill-warn';
+}
+
+function renderVisaoGeral(unit){
+  const am = activeMandate(unit.id);
+  const alerts = computeAllAlerts().filter(a=>a.unit && a.unit.id===unit.id);
+  const members = am ? mandateMembers(am.id) : [];
+  const tech = unitTechnicians(unit.id)[0] || null;
+
+  let mandateCard;
+  if(!am){
+    mandateCard = `<section class="card"><div class="empty" style="padding:24px;">Nenhum mandato cadastrado.<br><br><button class="btn btn-primary" id="btnNewMandateQuick">${ico('plus')}Cadastrar mandato</button></div></section>`;
+  } else {
+    const ra = mandateRenewalAlert(am);
+    const total = daysBetween(am.startDate, am.endDate);
+    const elapsed = daysBetween(am.startDate, todayISO());
+    const pct = total>0 ? Math.max(0, Math.min(100, Math.round(elapsed/total*100))) : 0;
+    const left = daysBetween(todayISO(), am.endDate);
+    const hasRenewal = am.renewal && am.renewal.stages && am.renewal.stages.length;
+    let banner = '';
+    if(ra && ra.invalid){
+      banner = `<div class="banner danger" style="margin-top:20px;"><div class="b-text"><div class="b-title">Datas do mandato inválidas</div><div style="font-size:13px;margin-top:2px;">O início está depois do fim. Corrija as datas para o sistema calcular os prazos.</div></div><button class="btn btn-primary" data-fix-mandate="${am.id}">Corrigir mandato</button></div>`;
+    } else if(hasRenewal && am.renewal.status!=='concluido'){
+      banner = `<div class="banner warn" style="margin-top:20px;"><div class="b-text"><div class="b-title">Renovação em andamento</div><div style="font-size:13px;margin-top:2px;">Acompanhe as etapas do processo eleitoral até a posse da nova CIPA.</div></div><button class="btn btn-primary" data-renewal-action="${am.id}">Gerenciar cronograma</button></div>`;
+    } else if(ra){
+      const start60 = fmtDate(addDaysISO(am.endDate, -PROCESS_LEAD_DAYS));
+      banner = `<div class="banner ${ra.level==='danger'?'danger':'warn'}" style="margin-top:20px;"><div class="b-text"><div class="b-title">${ra.level==='danger'?'Prazo para iniciar a renovação vencido':'Hora de preparar a renovação'}</div><div style="font-size:13px;margin-top:2px;">O cronograma automático da NR-05 começa em ${start60} e inclui ${INSCRICAO_DIAS} dias de inscrição.</div></div><button class="btn btn-primary" data-renewal-action="${am.id}">Iniciar renovação</button></div>`;
+    }
+    mandateCard = `<section class="card" style="padding:24px;">
+      <div class="row">
+        <div><div class="lbl-s">Mandato atual</div><div style="font-size:20px;font-weight:600;">${fmtDate(am.startDate)} – ${fmtDate(am.endDate)}</div></div>
+        ${unitStatusPill(unit.id)}
+      </div>
+      ${total>0 ? `<div class="progress" style="margin-top:18px;"><div style="width:${pct}%;"></div></div>
+      <div class="row muted" style="font-size:13px;margin-top:8px;"><span>${pct}% do mandato decorrido</span><span>${left>=0?'faltam '+left+' dia(s)':'encerrado há '+Math.abs(left)+' dia(s)'}</span></div>` : ''}
+      ${banner}
+    </section>`;
+  }
+
+  const membersPanel = am ? `<section class="panel">
+    <div class="panel-head">Membros do mandato atual <button class="btn btn-sm" data-open-unit-tab="${unit.id}|membros">Ver todos</button></div>
+    <table><thead><tr><th>Nome</th><th>Função</th><th>Representação</th><th>Estabilidade</th></tr></thead><tbody>
+    ${members.length ? members.map(m=>`<tr><td><b>${esc(m.name)}</b></td><td>${esc(m.role||'—')}</td><td>${esc(m.representationType||'—')}</td><td>${stabilityCellHtml(m, am)}</td></tr>`).join('') : `<tr><td colspan="4" class="faint" style="padding:16px;">Nenhum membro cadastrado neste mandato.</td></tr>`}
+    </tbody></table>
+  </section>` : '';
+
+  return `<div class="two-col">
+    <div class="main-col">${mandateCard}${membersPanel}</div>
+    <div class="side-col">
+      <section class="card">
+        <h3>Dados da unidade</h3>
+        <div class="lbl-s">CNPJ</div><div style="margin-bottom:14px;">${unit.cnpj? esc(unit.cnpj) : '<span class="faint">não informado</span>'}</div>
+        <div class="lbl-s">Técnico responsável</div>
+        ${tech ? `<div style="font-weight:500;">${esc(tech.name)}</div><div class="muted" style="font-size:13px;">${esc(tech.type||'')}${tech.registrationNumber?' · '+esc(tech.registrationNumber):''}</div>${tech.contact?`<div class="muted" style="font-size:13px;">${esc(tech.contact)}</div>`:''}`
+               : `<div class="faint">Nenhum definido. Use "Editar unidade" para cadastrar.</div>`}
+      </section>
+      <section class="panel">
+        <div class="panel-head">Alertas desta unidade</div>
+        <div style="padding:0 20px 16px;">
+        ${alerts.length ? alerts.slice(0,5).map(a=>alertBoxHtml(a)).join('') + (alerts.length>5?`<div class="faint">+ ${alerts.length-5} outro(s), veja a aba Alertas</div>`:'') : `<span class="pill pill-ok">Sem alertas pendentes</span>`}
+        </div>
+      </section>
+    </div>
+  </div>`;
+}
+
+function alertBoxHtml(a){
+  const cls = a.level==='danger'?'danger':'warn';
+  const icon = ico(a.level==='danger'?'erro':'alerta');
+  let action = '';
+  if(a.type==='renewal' && a.mandate){
+    if(a.invalid){
+      action = `<button class="btn btn-sm" data-fix-mandate="${a.mandate.id}" style="margin-left:auto; flex-shrink:0;">Corrigir mandato</button>`;
+    } else {
+      const hasSchedule = a.mandate.renewal && a.mandate.renewal.stages && a.mandate.renewal.stages.length;
+      action = `<button class="btn btn-sm" data-renewal-action="${a.mandate.id}" style="margin-left:auto; flex-shrink:0;">${hasSchedule?'Ver/editar cronograma':'Iniciar renovação'}</button>`;
+    }
+  }
+  return `<div class="alert-box ${cls}"><span>${icon}</span><div class="txt">${a.text}</div>${action}</div>`;
+}
+
+function renewalSummaryHtml(renewal){
+  const {done, total} = renewalProgress(renewal);
+  const status = renewalStatusInfo(renewal);
+  const rows = renewal.stages.map(s=>{
+    const dateText = s.type==='single' ? fmtDate(s.date) : (fmtDate(s.startDate)+' – '+fmtDate(s.endDate));
+    return `<div class="row" style="padding:3px 0; font-size:12.5px;"><span style="display:inline-flex;align-items:center;gap:8px;"><span class="dot ${s.done?'done':''}" style="width:18px;height:18px;border-width:1.5px;">${s.done?ico('check','style="width:11px;height:11px;stroke-width:3"'):''}</span>${esc(s.label)}</span><span class="muted">${dateText}</span></div>`;
+  }).join('');
+  return `<div style="margin-top:10px; padding:10px 12px; background:var(--surface-2); border-radius:8px;">
+    <div class="row" style="margin-bottom:4px;">
+      <span class="faint">Cronograma de renovação (${renewal.mode==='auto'?'automático':'manual'}) — ${done}/${total} etapas</span>
+      <span class="pill ${status.level==='ok'?'pill-ok':status.level==='danger'?'pill-danger':'pill-warn'}">${status.text}</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+/* ---------------- Dimensionamento (tela) ---------------- */
+function renderDimResult(){
+  const config = effectiveDimConfig();
+  const grau = S._dimGrau || 1;
+  const raw = S._dimNumEmp;
+  const n = (raw!=='' && raw!=null) ? Number(raw) : null;
+  if(n==null || isNaN(n) || n<=0){
+    return `<div class="faint" style="padding:10px 0;">Informe o número de colaboradores para calcular.</div>`;
+  }
+  const res = calcDimensionamento(config, grau, n);
+  if(!res) return '';
+  if(res.notRequired){
+    return `<div class="alert-box warn" style="margin-top:10px;"><span>ℹ️</span><div class="txt">Faixa "${esc(res.bracketLabel)}" para o grau de risco ${grau}: o Quadro I não exige CIPA formal nesta faixa. Verifique a necessidade de designado, conforme a NR-05.</div></div>`;
+  }
+  const total = (res.efetivos+res.suplentes)*2;
+  return `
+  <div class="grid" style="margin-top:12px;">
+    <div class="stat"><div class="num">${res.efetivos}</div><div class="label">Efetivos — eleitos (empregados)</div></div>
+    <div class="stat"><div class="num">${res.suplentes}</div><div class="label">Suplentes — eleitos (empregados)</div></div>
+    <div class="stat"><div class="num">${res.efetivos}</div><div class="label">Efetivos — a indicar (empregador)</div></div>
+    <div class="stat"><div class="num">${res.suplentes}</div><div class="label">Suplentes — a indicar (empregador)</div></div>
+    <div class="stat"><div class="num">${total}</div><div class="label">Total de membros da CIPA</div></div>
+  </div>
+  <div class="faint" style="margin-top:8px;">Faixa aplicada: ${esc(res.bracketLabel)} · Grau de risco ${grau}</div>`;
+}
+
+function renderDimensionamento(){
+  const config = effectiveDimConfig();
+  S._dimBuffer = JSON.parse(JSON.stringify(config));
+  const grau = S._dimGrau || 1;
+
+  function tableHtml(){
+    const head = '<tr><th>Grau</th><th></th>' + config.brackets.map(b=>`<th>${b}</th>`).join('') + '<th>+2.500 acima de 10k</th></tr>';
+    let body = '';
+    [1,2,3,4].forEach(g=>{
+      ['efetivos','suplentes'].forEach(tipo=>{
+        const arr = config.matrix[g][tipo];
+        const extraVal = config.extra[g][tipo];
+        body += `<tr>
+          <td>${tipo==='efetivos'?g:''}</td>
+          <td class="faint">${tipo==='efetivos'?'Efetivos':'Suplentes'}</td>
+          ${arr.map((v,idx)=>`<td><input type="number" min="0" style="width:46px; padding:4px;" data-dim-grau="${g}" data-dim-tipo="${tipo}" data-dim-idx="${idx}" value="${v==null?'':v}"></td>`).join('')}
+          <td><input type="number" min="0" style="width:46px; padding:4px;" data-dim-grau="${g}" data-dim-tipo="${tipo}" data-dim-extra="1" value="${extraVal==null?'':extraVal}"></td>
+        </tr>`;
+      });
+    });
+    return `<table style="font-size:11.5px;"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  return `
+  <div class="card">
+    <h3>Calculadora de dimensionamento (Quadro I — NR-05)</h3>
+    <div class="field-row">
+      <div class="field"><label>Grau de risco</label>
+        <select id="dimGrau">
+          ${[1,2,3,4].map(g=>`<option value="${g}" ${g===grau?'selected':''}>Grau ${g}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field"><label>Número de colaboradores no estabelecimento</label><input type="number" min="0" id="dimNumEmp" value="${S._dimNumEmp||''}"></div>
+    </div>
+    <div id="dimResult">${renderDimResult()}</div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:10px;">
+      <h3 style="margin:0;">Tabela de dimensionamento (editável)</h3>
+      <div class="top-actions">
+        <button class="btn btn-sm" id="btnResetDim">Restaurar padrão NR-05</button>
+        <button class="btn btn-sm btn-primary" id="btnSaveDim">Salvar tabela</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">${tableHtml()}</div>
+    <div class="hint" style="margin-top:8px;">Alterar um valor aqui muda o resultado do cálculo acima para todas as unidades — use se a empresa aplicar critério mais rígido que o mínimo legal da NR-05 (ex.: acordo ou convenção coletiva). Deixe o campo vazio para marcar a faixa como "sem exigência".</div>
+  </div>`;
+}
+
+function bindDimensionamentoEvents(){
+  const grauSel = document.getElementById('dimGrau');
+  const numInput = document.getElementById('dimNumEmp');
+  if(grauSel){
+    grauSel.addEventListener('change', e=>{
+      S._dimGrau = Number(e.target.value);
+      const box = document.getElementById('dimResult');
+      if(box) box.innerHTML = renderDimResult();
+    });
+  }
+  if(numInput){
+    numInput.addEventListener('input', e=>{
+      S._dimNumEmp = e.target.value;
+      const box = document.getElementById('dimResult');
+      if(box) box.innerHTML = renderDimResult();
+    });
+  }
+  document.querySelectorAll('[data-dim-grau]').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const g = e.target.dataset.dimGrau;
+      const tipo = e.target.dataset.dimTipo;
+      const val = e.target.value===''? null : Number(e.target.value);
+      if(e.target.dataset.dimExtra){
+        S._dimBuffer.extra[g][tipo] = val==null?0:val;
+      } else {
+        const idx = Number(e.target.dataset.dimIdx);
+        S._dimBuffer.matrix[g][tipo][idx] = val;
+      }
+    });
+  });
+  const btnReset = document.getElementById('btnResetDim');
+  if(btnReset) btnReset.addEventListener('click', async ()=>{
+    const ok = await dbSet('config', 'dimensionamento', DEFAULT_DIMENSIONAMENTO);
+    if(ok) toast('Tabela restaurada ao padrão da NR-05.', 'ok');
+  });
+  const btnSave = document.getElementById('btnSaveDim');
+  if(btnSave) btnSave.addEventListener('click', async ()=>{
+    const ok = await dbSet('config', 'dimensionamento', S._dimBuffer);
+    if(ok) toast('Tabela de dimensionamento salva.', 'ok');
+  });
+}
+
+/* ---------------- Mandatos ---------------- */
+function renderMandatos(unit){
+  const list = unitMandates(unit.id);
+  const curM = activeMandate(unit.id);
+  return `
+  <div class="row" style="margin-bottom:16px;">
+    <div class="sect-title" style="margin:0;">Mandatos</div>
+    <button class="btn btn-primary" id="btnNewMandate">${ico('plus')}Novo mandato</button>
+  </div>
+  ${list.length===0 ? `<div class="empty"><div class="big">${ico('calendario','style="width:32px;height:32px"')}</div>Nenhum mandato cadastrado.</div>` :
+  list.map(m=>{
+    const isCur = curM && curM.id===m.id;
+    const ra = isCur ? mandateRenewalAlert(m) : null;
+    const nMembers = mandateMembers(m.id).length;
+    return `<div class="card">
+      <div class="row">
+        <div>
+          <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</div>
+          <div class="faint">${nMembers} membro(s)</div>
+        </div>
+        <div class="top-actions">
+          ${ra? `<span class="pill ${raPillCls(ra)}">${ra.label}</span>` : (isCur ? `<span class="pill pill-ok">Em dia</span>` : `<span class="pill pill-muted">Encerrada</span>`)}
+          <button class="btn btn-sm" data-edit-mandate="${m.id}">Editar</button>
+          <button class="btn btn-sm btn-danger" data-del-mandate="${m.id}">Excluir</button>
+        </div>
+      </div>
+      ${ra? `<div style="margin-top:12px;">${alertBoxHtml({...ra, type:'renewal', mandate:m})}</div>` : ''}
+      ${m.renewal && m.renewal.stages && m.renewal.stages.length ? renewalSummaryHtml(m.renewal) : ''}
+    </div>`;
+  }).join('')}`;
+}
+
+/* ---------------- Membros (por gestão) ---------------- */
+function renderMembros(unit){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){
+    return `<div class="empty"><div class="big">${ico('usuario','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de adicionar membros.</div>`;
+  }
+  const defaultMandate = activeMandate(unit.id) || mandates[0];
+  return `
+  <div class="row" style="margin-bottom:8px; align-items:flex-start;">
+    <div>
+      <div class="sect-title" style="margin:0;">Membros por gestão</div>
+      <div class="muted" style="font-size:13px; margin-top:2px; max-width:640px;">Eleitos pelos empregados têm estabilidade de 2 anos a partir da posse, calculada automaticamente. Indicados pelo empregador não têm.</div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" id="btnDownloadTemplate">${ico('download')}Baixar modelo</button>
+      <button class="btn" id="btnImportMembers">${ico('upload')}Importar planilha</button>
+      <button class="btn btn-primary" id="btnNewMember" data-mandate="${defaultMandate.id}">${ico('plus')}Novo membro</button>
+    </div>
+  </div>
+  <div style="height:12px;"></div>
+  ${mandates.map(m=>{
+    const members = mandateMembers(m.id);
+    const isCurrent = defaultMandate.id===m.id;
+    const expanded = S._expandedMandates[m.id]!==undefined ? S._expandedMandates[m.id] : isCurrent;
+    const head = `<div class="panel-head">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</span>${isCurrent?'<span class="pill pill-info">Gestão atual</span>':'<span class="pill pill-muted">Encerrada</span>'}</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span class="muted" style="font-weight:400;font-size:13px;">${members.length} membro(s)</span>
+          ${expanded ? `<button class="btn btn-sm" data-add-member-mandate="${m.id}">${ico('plus')}Adicionar</button>` : ''}
+          <button class="btn btn-sm" data-toggle-mandate="${m.id}">${expanded?'Ocultar':'Ver membros'}</button></div>
+      </div>`;
+    const body = expanded ? `<table><thead><tr><th>Nome</th><th>Função</th><th>Tipo</th><th>Representação</th><th>Posse</th><th>Estabilidade</th><th></th></tr></thead><tbody>
+      ${members.length===0 ? `<tr><td colspan="7" class="faint" style="padding:16px;text-align:center;">Nenhum membro nesta gestão.</td></tr>` :
+      members.map(mm=>`<tr${mm.consecutiveAlert?' style="background:var(--warn-soft);"':''}>
+        <td><div style="font-weight:500;">${esc(mm.name)}${mm.consecutiveAlert?' <span class="pill pill-warn" style="margin-left:6px;">2º mandato?</span>':''}</div>${mm.matricula?`<div class="faint">Matrícula ${esc(mm.matricula)}</div>`:''}</td>
+        <td>${esc(mm.role||'—')}</td>
+        <td>${esc(mm.type||'—')}</td>
+        <td>${esc(mm.representationType||'—')}</td>
+        <td>${mm.dataPosse? fmtDate(mm.dataPosse) : '<span class="faint">—</span>'}</td>
+        <td>${stabilityCellHtml(mm, m)}</td>
+        <td><div class="top-actions">
+          <button class="btn btn-sm" data-edit-member="${mm.id}" aria-label="Editar ${esc(mm.name)}">${ico('editar')}</button>
+          <button class="btn btn-sm btn-danger" data-del-member="${mm.id}">Excluir</button>
+        </div></td>
+      </tr>`).join('')}
+      </tbody></table>` : '';
+    return `<section class="panel" style="margin-bottom:16px;">${head}${body}</section>`;
+  }).join('')}`;
+}
+
+/* ---------------- Documentos (por gestão) ---------------- */
+const DOC_FIXED_CATEGORIES = ['Ata de reunião','Comunicação MTE/eSocial','Plano de trabalho','Calendário anual'];
+const DOC_CATEGORIES_NO_CRONOGRAMA = ['Edital de convocação','Ata de eleição','Termo de posse','Ata de reunião','Comunicação MTE/eSocial','Plano de trabalho','Calendário anual'];
+
+function renderDocumentos(unit){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){
+    return `<div class="empty"><div class="big">${ico('doc','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de enviar documentos.</div>`;
+  }
+  const defaultMandate = activeMandate(unit.id) || mandates[0];
+  return `
+  <div class="row" style="margin-bottom:12px;">
+    <div class="row-title">Documentos — por gestão</div>
+    <button class="btn btn-primary" id="btnNewDoc" data-mandate="${defaultMandate.id}">${ico('upload')}Enviar documento</button>
+  </div>
+  ${mandates.map(m=>{
+    const docs = unitDocuments(unit.id, m.id).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
+    const isCurrent = defaultMandate.id===m.id;
+    return `<div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)} ${isCurrent?'<span class="pill pill-ok" style="margin-left:6px;">gestão atual</span>':''}</div>
+        <button class="btn btn-sm" data-add-doc-mandate="${m.id}">+ Adicionar aqui</button>
+      </div>
+      ${docs.length===0 ? `<div class="faint" style="padding:6px 0;">Nenhum documento nesta gestão.</div>` :
+      docs.map(d=>{
+        const metaPrefix = (d.category && d.category!==d.name) ? esc(d.category)+' · ' : '';
+        return `<div class="doc-item">
+        <div class="doc-icon">${ico('doc')}</div>
+        <div class="doc-info">
+          <div class="name">${esc(d.name)}</div>
+          <div class="meta">${metaPrefix}enviado em ${fmtDate((d.uploadedAt||'').slice(0,10))}</div>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}">Abrir</button>
+          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
+        </div>
+      </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')}`;
+}
+
+/* ---------------- Treinamentos ---------------- */
+function renderTreinamentos(unit){
+  const mandates = unitMandates(unit.id);
+  const memberIds = new Set();
+  mandates.forEach(m=>mandateMembers(m.id).forEach(mem=>memberIds.add(mem.id)));
+  const unitMembers = S.members.filter(m=>memberIds.has(m.id));
+  const trainings = S.trainings.filter(t=>memberIds.has(t.memberId)).sort((a,b)=>(b.completionDate||'').localeCompare(a.completionDate||''));
+
+  return `
+  <div class="row" style="margin-bottom:12px;">
+    <div class="row-title">Treinamentos e certificados</div>
+    <button class="btn btn-primary" id="btnNewTraining" ${unitMembers.length===0?'disabled title="Cadastre membros primeiro"':''}>${ico('plus')}Novo registro</button>
+  </div>
+  ${trainings.length===0? `<div class="empty"><div class="big">${ico('usuario','style="width:32px;height:32px"')}</div>Nenhum treinamento registrado.</div>` :
+  `<div class="card" style="padding:0;"><table>
+  <thead><tr><th>Membro</th><th>Curso</th><th>Conclusão</th><th>Validade</th><th>Situação</th><th></th></tr></thead>
+  <tbody>
+  ${trainings.map(t=>{
+    const mem = byId(S.members, t.memberId);
+    const ta = trainingExpiryAlert(t);
+    return `<tr>
+      <td>${mem? esc(mem.name) : '<span class="faint">membro removido</span>'}</td>
+      <td>${esc(t.courseName)}${t.hours?` <span class="faint">(${t.hours}h)</span>`:''}</td>
+      <td>${fmtDate(t.completionDate)}</td>
+      <td>${t.expiryDate? fmtDate(t.expiryDate) : '<span class="faint">sem validade</span>'}</td>
+      <td>${ta? `<span class="pill ${ta.level==='danger'?'pill-danger':'pill-warn'}">${ta.level==='danger'?'vencido':'vence em breve'}</span>` : '<span class="pill pill-ok">em dia</span>'}</td>
+      <td class="top-actions">
+        ${t.certificateAssetId? `<button class="btn btn-sm" data-open-file="${t.certificateAssetId}" data-name="${esc(t.courseName)}">Certificado</button>` : ''}
+        <button class="btn btn-sm btn-danger" data-del-training="${t.id}">Excluir</button>
+      </td>
+    </tr>`;
+  }).join('')}
+  </tbody></table></div>`}`;
+}
+
+/* ---------------- Alertas tab ---------------- */
+function renderAlertasTab(unit){
+  const alerts = computeAllAlerts().filter(a=>a.unit && a.unit.id===unit.id);
+  if(alerts.length===0) return `<div class="empty"><div class="big">${ico('check','style="width:32px;height:32px"')}</div>Nenhum alerta pendente para esta unidade.</div>`;
+  const renewal = alerts.filter(a=>a.type==='renewal');
+  const consec = alerts.filter(a=>a.type==='consecutive');
+  const train = alerts.filter(a=>a.type==='training');
+  let html='';
+  if(renewal.length) html += `<div class="card"><h3>Renovação de mandato (NR-05)</h3>${renewal.map(alertBoxHtml).join('')}</div>`;
+  if(consec.length) html += `<div class="card"><h3>Possível 2º mandato consecutivo</h3>${consec.map(alertBoxHtml).join('')}</div>`;
+  if(train.length) html += `<div class="card"><h3>Certificados / treinamentos</h3>${train.map(alertBoxHtml).join('')}</div>`;
+  return html;
+}
+
+/* ---------------- event binding per tab ---------------- */
+function bindTabEvents(unit){
+  const q = sel => document.querySelectorAll(sel);
+  const b = (sel, fn) => { const els = q(sel); els.forEach(el=>el.addEventListener('click', ()=>fn(el))); };
+
+  b('#btnNewMandate, #btnNewMandateQuick', ()=>openMandateModal(unit));
+  b('[data-edit-mandate]', el=>openMandateModal(unit, byId(S.mandates, el.dataset.editMandate)));
+  b('[data-del-mandate]', async el=>{
+    if(confirm('Excluir este mandato? Membros e documentos vinculados continuarão existindo mas ficarão órfãos.')){
+      await dbDelete('mandates', el.dataset.delMandate);
+      toast('Mandato excluído.', 'ok');
+    }
+  });
+
+  b('#btnNewMember', el=>openMemberModal(unit, el.dataset.mandate));
+  b('[data-add-member-mandate]', el=>openMemberModal(unit, el.dataset.addMemberMandate));
+  b('#btnDownloadTemplate', ()=>downloadMemberTemplate());
+  b('#btnImportMembers', ()=>openImportMembersModal(unit));
+  b('[data-edit-member]', el=>{
+    const mem = byId(S.members, el.dataset.editMember);
+    openMemberModal(unit, mem.mandateId, mem);
+  });
+  b('[data-del-member]', async el=>{
+    if(confirm('Excluir este membro?')){ await dbDelete('members', el.dataset.delMember); toast('Membro excluído.', 'ok'); }
+  });
+
+  b('#btnNewDoc', el=>openDocModal(unit, el.dataset.mandate));
+  b('[data-add-doc-mandate]', el=>openDocModal(unit, el.dataset.addDocMandate));
+  b('[data-del-doc]', async el=>{
+    if(confirm('Excluir este documento?')){
+      const doc = byId(S.documents, el.dataset.delDoc);
+      await dbDelete('documents', el.dataset.delDoc);
+      if(doc && doc.assetId && S.assets){ try{ await S.assets.delete(doc.assetId); }catch(e){} }
+      toast('Documento excluído.', 'ok');
+    }
+  });
+
+  b('#btnNewTraining', ()=>openTrainingModal(unit));
+  b('[data-del-training]', async el=>{
+    if(confirm('Excluir este registro de treinamento?')){
+      const t = byId(S.trainings, el.dataset.delTraining);
+      await dbDelete('trainings', el.dataset.delTraining);
+      if(t && t.certificateAssetId && S.assets){ try{ await S.assets.delete(t.certificateAssetId); }catch(e){} }
+      toast('Treinamento excluído.', 'ok');
+    }
+  });
+
+  b('[data-renewal-action]', el=>{
+    const mandate = byId(S.mandates, el.dataset.renewalAction);
+    if(!mandate) return;
+    if(mandate.renewal && mandate.renewal.stages && mandate.renewal.stages.length){
+      openRenewalEditModal(unit, mandate, mandate.renewal.stages.map(s=>({...s})), mandate.renewal.mode);
+    } else {
+      openRenewalChoiceModal(unit, mandate);
+    }
+  });
+
+  b('#btnEditUnitInline', ()=>openUnitModal(unit));
+  b('[data-open-file]', el=>openStoredFile(el.dataset.openFile, el.dataset.name));
+  b('[data-open-unit-tab]', el=>goUnitTab(el.dataset.openUnitTab));
+  b('[data-fix-mandate]', el=>openMandateModal(unit, byId(S.mandates, el.dataset.fixMandate)));
+  b('[data-toggle-mandate]', el=>{
+    const id = el.dataset.toggleMandate;
+    const cur = S._expandedMandates[id]!==undefined ? S._expandedMandates[id] : ((activeMandate(unit.id)||{}).id===id);
+    S._expandedMandates[id] = !cur;
+    renderMain();
+  });
+
+  bindDimensionamentoEvents();
+}
+
+/* ---------------- modal shell ---------------- */
+function openModal(title, bodyHtml, footHtml){
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="modal-backdrop" id="mBackdrop">
+    <div class="modal">
+      <div class="modal-head"><h3>${title}</h3><button class="modal-close" id="mClose" aria-label="Fechar">${ico('plus','style="transform:rotate(45deg)"')}</button></div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-foot">${footHtml}</div>
+    </div>
+  </div>`;
+  document.getElementById('mClose').addEventListener('click', closeModal);
+  document.getElementById('mBackdrop').addEventListener('click', e=>{ if(e.target.id==='mBackdrop') closeModal(); });
+}
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+/* ---------------- Unit modal (criar/editar unidade + técnico responsável) ---------------- */
+function openUnitModal(unit){
+  const draft = {
+    name: unit ? unit.name : '',
+    cnpj: unit ? (unit.cnpj||'') : '',
+    technicianId: unit ? (unit.technicianId||'') : ''
+  };
+  let addingTech = false;
+
+  function captureDraft(){
+    const n = document.getElementById('fUnitName');
+    const c = document.getElementById('fUnitCnpj');
+    const t = document.getElementById('fUnitTech');
+    if(n) draft.name = n.value.trim();
+    if(c) draft.cnpj = c.value.trim();
+    if(t) draft.technicianId = t.value;
+  }
+
+  function formBodyHtml(){
+    return `
+    <div class="field"><label>Nome da unidade *</label><input id="fUnitName" placeholder="Ex: FIEG – Unidade Setor Norte" value="${esc(draft.name)}"></div>
+    <div class="field"><label>CNPJ (opcional)</label><input id="fUnitCnpj" placeholder="00.000.000/0000-00" value="${esc(draft.cnpj)}"></div>
+    <div class="field">
+      <label>Técnico responsável</label>
+      <div style="display:flex; gap:6px;">
+        <select id="fUnitTech" style="flex:1;">
+          <option value="">— nenhum —</option>
+          ${S.technicians.map(t=>`<option value="${t.id}" ${draft.technicianId===t.id?'selected':''}>${esc(t.name)}${t.type?' — '+esc(t.type):''}</option>`).join('')}
+        </select>
+        <button type="button" class="btn btn-sm" id="btnEditSelectedTech" title="Editar técnico selecionado" aria-label="Editar técnico selecionado">${ico('editar')}</button>
+        <button type="button" class="btn btn-sm" id="btnNewTechInline" title="Cadastrar novo técnico" aria-label="Cadastrar novo técnico">${ico('plus')}</button>
+      </div>
+      <div class="hint">Você pode trocar o técnico responsável a qualquer momento, editando a unidade.</div>
+    </div>`;
+  }
+
+  function addTechBodyHtml(){
+    return `
+    <div class="hint" style="margin-bottom:2px;">Cadastrar novo técnico responsável. Ao concluir, ele já fica selecionado para esta unidade.</div>
+    <div class="field"><label>Nome completo *</label><input id="fTQName"></div>
+    <div class="field-row">
+      <div class="field"><label>Tipo</label>
+        <select id="fTQType">
+          <option value="Técnico de Segurança do Trabalho">Técnico de Segurança do Trabalho</option>
+          <option value="Engenheiro de Segurança">Engenheiro de Segurança</option>
+          <option value="Médico do Trabalho">Médico do Trabalho</option>
+          <option value="Enfermeiro do Trabalho">Enfermeiro do Trabalho</option>
+        </select>
+      </div>
+      <div class="field"><label>Nº de registro</label><input id="fTQReg" placeholder="MTE / CREA / conselho"></div>
+    </div>
+    <div class="field"><label>Contato (e-mail/telefone)</label><input id="fTQContact"></div>
+    <div class="top-actions" style="margin-top:4px;">
+      <button type="button" class="btn btn-sm" id="btnCancelNewTech">Voltar</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btnConfirmNewTech">Adicionar técnico</button>
+    </div>`;
+  }
+
+  function render(){
+    openModal(
+      unit? 'Editar unidade' : 'Nova unidade',
+      addingTech ? addTechBodyHtml() : formBodyHtml(),
+      addingTech ? '' : `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`
+    );
+    bind();
+  }
+
+  function bind(){
+    if(!addingTech){
+      document.getElementById('mCancel').addEventListener('click', closeModal);
+      document.getElementById('btnNewTechInline').addEventListener('click', ()=>{ captureDraft(); addingTech=true; render(); });
+      document.getElementById('btnEditSelectedTech').addEventListener('click', ()=>{
+        captureDraft();
+        if(!draft.technicianId){ toast('Selecione um técnico para editar.', 'err'); return; }
+        openTechModal(byId(S.technicians, draft.technicianId));
+      });
+      document.getElementById('mSave').addEventListener('click', async ()=>{
+        captureDraft();
+        if(!draft.name){ toast('Informe o nome da unidade.', 'err'); return; }
+        const data = {name: draft.name, cnpj: draft.cnpj, technicianId: draft.technicianId||null};
+        let ok;
+        if(unit) ok = await dbUpdate('units', unit.id, data);
+        else { const id = await dbAdd('units', data); ok = !!id; if(id) S.currentUnitId = id; }
+        if(ok){ closeModal(); toast(unit? 'Unidade atualizada.' : 'Unidade cadastrada.', 'ok'); }
+      });
+    } else {
+      document.getElementById('btnCancelNewTech').addEventListener('click', ()=>{ addingTech=false; render(); });
+      document.getElementById('btnConfirmNewTech').addEventListener('click', async ()=>{
+        const name = document.getElementById('fTQName').value.trim();
+        if(!name){ toast('Informe o nome do técnico.', 'err'); return; }
+        const id = await dbAdd('technicians', {
+          name, type: document.getElementById('fTQType').value,
+          registrationNumber: document.getElementById('fTQReg').value.trim(),
+          contact: document.getElementById('fTQContact').value.trim()
+        });
+        if(id){ draft.technicianId = id; addingTech=false; toast('Técnico cadastrado.', 'ok'); render(); }
+      });
+    }
+  }
+
+  render();
+}
+
+/* ---------------- Mandate modal ---------------- */
+function openMandateModal(unit, mandate){
+  openModal(mandate? 'Editar mandato' : 'Novo mandato', `
+    <div class="field-row">
+      <div class="field"><label>Início *</label><input type="date" id="fMStart" value="${mandate?mandate.startDate:''}"></div>
+      <div class="field"><label>Fim *</label><input type="date" id="fMEnd" value="${mandate?mandate.endDate:''}"></div>
+    </div>
+    <div class="field"><label>Status</label>
+      <select id="fMStatus">
+        <option value="ativo" ${mandate&&mandate.status==='ativo'?'selected':''}>Ativo</option>
+        <option value="encerrado" ${mandate&&mandate.status==='encerrado'?'selected':''}>Encerrado</option>
+      </select>
+    </div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const startDate = document.getElementById('fMStart').value;
+    const endDate = document.getElementById('fMEnd').value;
+    if(!startDate || !endDate){ toast('Informe início e fim do mandato.', 'err'); return; }
+    if(startDate >= endDate){ toast('A data de início precisa ser anterior à data de fim do mandato.', 'err'); return; }
+    const data = {
+      unitId: unit.id, unitName: unit.name, startDate, endDate,
+      status: document.getElementById('fMStatus').value
+    };
+    let ok;
+    if(mandate) ok = await dbUpdate('mandates', mandate.id, data);
+    else ok = await dbAdd('mandates', data);
+    if(ok){ closeModal(); toast('Mandato salvo.', 'ok'); }
+  });
+}
+
+/* ---------------- Member modal ---------------- */
+function openMemberModal(unit, mandateId, member){
+  const mandates = unitMandates(unit.id);
+  openModal(member? 'Editar membro' : 'Novo membro da CIPA', `
+    <div class="field"><label>Gestão (mandato) *</label>
+      <select id="fMemMandate">
+        ${mandates.map(m=>`<option value="${m.id}" ${(member?member.mandateId:mandateId)===m.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Nome completo *</label><input id="fMemName" value="${member?esc(member.name):''}"></div>
+    <div class="field-row">
+      <div class="field"><label>Matrícula *</label><input id="fMemMatricula" placeholder="Ex: 00123" value="${member?esc(member.matricula||''):''}"></div>
+      <div class="field"><label>Cargo/função na empresa</label><input id="fMemJob" value="${member?esc(member.jobTitle||''):''}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Função na CIPA</label>
+        <select id="fMemRole">
+          <option value="Titular" ${member&&member.role==='Titular'?'selected':''}>Titular</option>
+          <option value="Suplente" ${member&&member.role==='Suplente'?'selected':''}>Suplente</option>
+          <option value="Presidente" ${member&&member.role==='Presidente'?'selected':''}>Presidente</option>
+          <option value="Vice-presidente" ${member&&member.role==='Vice-presidente'?'selected':''}>Vice-presidente</option>
+          <option value="Secretário" ${member&&member.role==='Secretário'?'selected':''}>Secretário</option>
+        </select>
+      </div>
+      <div class="field"><label>Tipo</label>
+        <select id="fMemType">
+          <option value="Eleito" ${member&&member.type==='Eleito'?'selected':''}>Eleito</option>
+          <option value="Indicado" ${member&&member.type==='Indicado'?'selected':''}>Indicado</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Representação</label>
+        <select id="fMemRep">
+          <option value="Empregados" ${member&&member.representationType==='Empregados'?'selected':''}>Empregados</option>
+          <option value="Empregador" ${member&&member.representationType==='Empregador'?'selected':''}>Empregador</option>
+        </select>
+      </div>
+      <div class="field"><label>Data da posse</label><input type="date" id="fMemPosse" value="${member?esc(member.dataPosse||''):''}"></div>
+    </div>
+    <div id="stabilityPreview"></div>
+    <div id="consecWarning"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+
+  function updateStabilityPreview(){
+    const type = document.getElementById('fMemType').value;
+    const rep = document.getElementById('fMemRep').value;
+    const posse = document.getElementById('fMemPosse').value;
+    const box = document.getElementById('stabilityPreview');
+    if(type==='Eleito' && rep==='Empregados'){
+      if(posse){
+        const end = addYearsISO(posse, 2);
+        box.innerHTML = `<div class="hint" style="color:var(--ok);">Estabilidade automática: vigente até ${fmtDate(end)} (2 anos a partir da posse).</div>`;
+      } else {
+        box.innerHTML = `<div class="hint">Informe a data da posse para calcular a estabilidade automaticamente (2 anos).</div>`;
+      }
+    } else {
+      box.innerHTML = `<div class="hint">Este membro não possui estabilidade provisória (indicado e/ou representante do empregador).</div>`;
+    }
+  }
+  document.getElementById('fMemType').addEventListener('change', updateStabilityPreview);
+  document.getElementById('fMemRep').addEventListener('change', updateStabilityPreview);
+  document.getElementById('fMemPosse').addEventListener('change', updateStabilityPreview);
+  updateStabilityPreview();
+
+  async function checkAndWarn(){
+    const name = document.getElementById('fMemName').value.trim();
+    const matricula = document.getElementById('fMemMatricula').value.trim();
+    const curMandateId = document.getElementById('fMemMandate').value;
+    const box = document.getElementById('consecWarning');
+    if(!name || !matricula){ box.innerHTML=''; return null; }
+    const res = checkConsecutive(unit.id, name, matricula, curMandateId);
+    if(res){
+      box.innerHTML = alertBoxHtml({level:'warn', text:'Esta pessoa (mesmo nome e matrícula) também foi membro no mandato anterior ('+fmtDate(res.prevMandate.startDate)+'–'+fmtDate(res.prevMandate.endDate)+', função: '+esc(res.match.role||'—')+'). Isso pode configurar 2º mandato consecutivo — verifique a elegibilidade conforme a NR-05.'});
+    } else box.innerHTML='';
+    return res;
+  }
+  document.getElementById('fMemName').addEventListener('blur', checkAndWarn);
+  document.getElementById('fMemMatricula').addEventListener('blur', checkAndWarn);
+  document.getElementById('fMemMandate').addEventListener('change', checkAndWarn);
+  if(member) checkAndWarn();
+
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const name = document.getElementById('fMemName').value.trim();
+    const matricula = document.getElementById('fMemMatricula').value.trim();
+    const selectedMandateId = document.getElementById('fMemMandate').value;
+    if(!name){ toast('Informe o nome do membro.', 'err'); return; }
+    if(!matricula){ toast('Informe a matrícula do membro.', 'err'); return; }
+    const consec = await checkAndWarn();
+    const data = {
+      unitId: unit.id, mandateId: selectedMandateId, name, matricula,
+      jobTitle: document.getElementById('fMemJob').value.trim(),
+      role: document.getElementById('fMemRole').value,
+      type: document.getElementById('fMemType').value,
+      representationType: document.getElementById('fMemRep').value,
+      dataPosse: document.getElementById('fMemPosse').value || null,
+      consecutiveAlert: !!consec
+    };
+    let ok;
+    if(member) ok = await dbUpdate('members', member.id, data);
+    else ok = await dbAdd('members', data);
+    if(ok){ closeModal(); toast(consec? 'Membro salvo — atenção ao alerta de 2º mandato.' : 'Membro salvo.', consec?'':'ok'); }
+  });
+}
+
+/* ---------------- Import de membros via planilha (CSV) ---------------- */
+function openImportMembersModal(unit){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){ toast('Cadastre um mandato antes de importar membros.', 'err'); return; }
+  const defaultMandate = activeMandate(unit.id) || mandates[0];
+  let parsedRows = null;
+
+  openModal('Importar planilha de membros', `
+    <div class="field"><label>Gestão (mandato) de destino *</label>
+      <select id="impMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===defaultMandate.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Arquivo (.csv) *</label><input type="file" id="impFile" accept=".csv,text/csv"></div>
+    <div class="hint">Use o modelo (botão "Baixar modelo" na tela de Membros). Colunas esperadas: Nome completo, Matrícula, Cargo/Função, Função na CIPA, Tipo, Representação, Data da Posse (DD/MM/AAAA, opcional — usada para calcular a estabilidade automática de eleitos). Apague ou edite a linha de exemplo antes de importar.</div>
+    <div id="impPreview"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mImport" disabled>Importar</button>`);
+
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  const fileInput = document.getElementById('impFile');
+  const previewBox = document.getElementById('impPreview');
+  const importBtn = document.getElementById('mImport');
+
+  fileInput.addEventListener('change', async ()=>{
+    const file = fileInput.files[0];
+    if(!file) return;
+    let text;
+    try{ text = await file.text(); }
+    catch(e){ toast('Não foi possível ler o arquivo.', 'err'); return; }
+    const rows = parseCSVMembers(text);
+    parsedRows = rows;
+    if(rows.length===0){
+      previewBox.innerHTML = `<div class="alert-box warn"><span>${ico('alerta')}</span><div class="txt">Nenhuma linha de dados encontrada. Confira se o arquivo é o modelo em CSV com cabeçalho na primeira linha.</div></div>`;
+      importBtn.disabled = true;
+      return;
+    }
+    const valid = rows.filter(r=>r.errors.length===0);
+    previewBox.innerHTML = `
+      <div class="hint" style="margin:8px 0;">${valid.length} válido(s) de ${rows.length} linha(s).</div>
+      <div style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+        <table style="font-size:12px;"><thead><tr><th>Linha</th><th>Nome</th><th>Matrícula</th><th>Situação</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td>${r.rowIndex}</td>
+          <td>${esc(r.name||'—')}</td>
+          <td>${esc(r.matricula||'—')}</td>
+          <td>${r.errors.length? `<span class="pill pill-danger">${esc(r.errors.join('; '))}</span>` : '<span class="pill pill-ok">ok</span>'}</td>
+        </tr>`).join('')}
+        </tbody></table>
+      </div>`;
+    importBtn.disabled = valid.length===0;
+  });
+
+  importBtn.addEventListener('click', async ()=>{
+    if(!parsedRows) return;
+    const mandateId = document.getElementById('impMandate').value;
+    const valid = parsedRows.filter(r=>r.errors.length===0);
+    importBtn.disabled = true; importBtn.textContent = 'Importando…';
+    let ok=0, fail=0, consecCount=0;
+    for(const r of valid){
+      const consec = checkConsecutive(unit.id, r.name, r.matricula, mandateId);
+      if(consec) consecCount++;
+      const id = await dbAdd('members', {
+        unitId: unit.id, mandateId, name:r.name, matricula:r.matricula,
+        jobTitle:r.jobTitle||'', role:r.role, type:r.type, representationType:r.representationType,
+        dataPosse: r.dataPosse||null,
+        consecutiveAlert: !!consec
+      });
+      if(id) ok++; else fail++;
+    }
+    closeModal();
+    let msg = ok+' membro(s) importado(s).';
+    if(fail) msg += ' '+fail+' falharam.';
+    if(consecCount) msg += ' '+consecCount+' com alerta de 2º mandato — confira na lista.';
+    toast(msg, fail? 'err' : (consecCount? 'ok' : 'ok'));
+  });
+}
+
+/* ---------------- Document modal (upload) ---------------- */
+function openDocModal(unit, presetMandateId){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){ toast('Cadastre um mandato antes de enviar documentos.', 'err'); return; }
+  if(!S.assets){ toast('Upload de arquivos não está disponível nesta visualização.', 'err'); return; }
+  let currentMandate = byId(mandates, presetMandateId) || mandates[0];
+
+  function titleOptionsFor(mandate){
+    if(mandate && mandate.renewal && mandate.renewal.stages && mandate.renewal.stages.length){
+      return mandate.renewal.stages.map(s=>s.label).concat(DOC_FIXED_CATEGORIES);
+    }
+    return DOC_CATEGORIES_NO_CRONOGRAMA;
+  }
+  function titleSelectHtml(mandate){
+    return titleOptionsFor(mandate).map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('') + `<option value="__outros__">Outros documentos</option>`;
+  }
+
+  openModal('Enviar documento', `
+    <div class="field"><label>Gestão (mandato) *</label>
+      <select id="fDocMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===currentMandate.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Título do documento *</label>
+      <select id="fDocTitle">${titleSelectHtml(currentMandate)}</select>
+      <div class="hint">Os títulos seguem as etapas do cronograma de renovação desta gestão, quando houver um cadastrado.</div>
+    </div>
+    <div class="field" id="fDocCustomWrap" style="display:none;">
+      <label>Novo título *</label>
+      <input id="fDocCustomName" placeholder="Digite o título do documento">
+    </div>
+    <div class="field"><label>Arquivo * (até 5 MB)</label><input type="file" id="fDocFile"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Enviar</button>`);
+
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+
+  const mandateSel = document.getElementById('fDocMandate');
+  const titleSel = document.getElementById('fDocTitle');
+  const customWrap = document.getElementById('fDocCustomWrap');
+
+  function refreshCustomVisibility(){
+    customWrap.style.display = titleSel.value==='__outros__' ? '' : 'none';
+  }
+  refreshCustomVisibility();
+
+  mandateSel.addEventListener('change', ()=>{
+    currentMandate = byId(mandates, mandateSel.value);
+    titleSel.innerHTML = titleSelectHtml(currentMandate);
+    refreshCustomVisibility();
+  });
+  titleSel.addEventListener('change', refreshCustomVisibility);
+
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const isCustom = titleSel.value==='__outros__';
+    const name = isCustom ? document.getElementById('fDocCustomName').value.trim() : titleSel.value;
+    const fileInput = document.getElementById('fDocFile');
+    const file = fileInput.files[0];
+    if(!name || !file){ toast('Informe o título e selecione um arquivo.', 'err'); return; }
+    const saveBtn = document.getElementById('mSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'Enviando…';
+    try{
+      const res = await S.assets.upload(file);
+      await dbAdd('documents', {
+        unitId: unit.id, mandateId: mandateSel.value,
+        category: isCustom ? 'Outros documentos' : name,
+        name, assetId: res.id, url: res.url, contentType: res.contentType, sizeBytes: res.sizeBytes,
+        uploadedAt: new Date().toISOString()
+      });
+      closeModal(); toast('Documento enviado.', 'ok');
+    }catch(e){
+      toast('Falha no envio: '+(e.message||e.code), 'err');
+      saveBtn.disabled=false; saveBtn.textContent='Enviar';
+    }
+  });
+}
+
+/* ---------------- Training modal ---------------- */
+function openTrainingModal(unit){
+  const mandates = unitMandates(unit.id);
+  const memberIds = new Set();
+  mandates.forEach(m=>mandateMembers(m.id).forEach(mem=>memberIds.add(mem.id)));
+  const unitMembers = S.members.filter(m=>memberIds.has(m.id));
+  if(unitMembers.length===0){ toast('Cadastre membros antes de registrar treinamentos.', 'err'); return; }
+  openModal('Novo treinamento / certificado', `
+    <div class="field"><label>Membro *</label>
+      <select id="fTrMember">${unitMembers.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>Curso / treinamento *</label><input id="fTrCourse" placeholder="Ex: Curso básico de CIPA (NR-05)"></div>
+    <div class="field-row">
+      <div class="field"><label>Carga horária (h)</label><input type="number" id="fTrHours" min="0"></div>
+      <div class="field"><label>Conclusão *</label><input type="date" id="fTrDone"></div>
+    </div>
+    <div class="field"><label>Validade (opcional)</label><input type="date" id="fTrExpiry"></div>
+    <div class="field"><label>Certificado (arquivo, opcional, até 5 MB)</label><input type="file" id="fTrFile"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const memberId = document.getElementById('fTrMember').value;
+    const courseName = document.getElementById('fTrCourse').value.trim();
+    const completionDate = document.getElementById('fTrDone').value;
+    if(!courseName || !completionDate){ toast('Informe curso e data de conclusão.', 'err'); return; }
+    const saveBtn = document.getElementById('mSave');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    const data = {
+      memberId, courseName,
+      hours: Number(document.getElementById('fTrHours').value)||null,
+      completionDate,
+      expiryDate: document.getElementById('fTrExpiry').value || null
+    };
+    try{
+      const file = document.getElementById('fTrFile').files[0];
+      if(file && S.assets){
+        const res = await S.assets.upload(file);
+        data.certificateAssetId = res.id; data.certificateUrl = res.url;
+      }
+      await dbAdd('trainings', data);
+      closeModal(); toast('Treinamento salvo.', 'ok');
+    }catch(e){
+      toast('Falha ao salvar: '+(e.message||e.code), 'err');
+      saveBtn.disabled=false; saveBtn.textContent='Salvar';
+    }
+  });
+}
+
+/* ---------------- Renewal (cronograma) modals ---------------- */
+function openRenewalChoiceModal(unit, mandate){
+  openModal('Iniciar renovação', `
+    <p class="muted" style="margin:0;">Mandato ${fmtDate(mandate.startDate)} – ${fmtDate(mandate.endDate)}. O período de inscrição de candidatos é sempre de ${INSCRICAO_DIAS} dias. Como deseja montar o cronograma do processo eleitoral, conforme a NR-05?</p>
+    <div style="display:flex; flex-direction:column; gap:10px; margin-top:6px;">
+      <button class="btn btn-primary" id="bAuto" style="justify-content:center; padding:14px;">Gerar automático<br><span style="font-weight:400; font-size:12px;">A partir de ${PROCESS_LEAD_DAYS} dias antes do fim do mandato</span></button>
+      <button class="btn" id="bManual" style="justify-content:center; padding:14px;">Preencher manualmente<br><span style="font-weight:400; font-size:12px;">Mesmas etapas, você define as datas</span></button>
+    </div>
+  `, `<button class="btn" id="mCancel">Cancelar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('bAuto').addEventListener('click', ()=>{
+    openRenewalEditModal(unit, mandate, generateAutoRenewalStages(mandate), 'auto');
+  });
+  document.getElementById('bManual').addEventListener('click', ()=>{
+    openRenewalEditModal(unit, mandate, generateManualRenewalStages(), 'manual');
+  });
+}
+
+function openRenewalEditModal(unit, mandate, stages, mode){
+  function stageRowHtml(s, idx){
+    const doneBox = `<label style="display:flex; gap:5px; align-items:center; font-weight:400; font-size:12px; white-space:nowrap; margin-left:8px; color:var(--text-muted);"><input type="checkbox" data-stage-idx="${idx}" data-stage-field="done" ${s.done?'checked':''}> concluída</label>`;
+    if(s.type==='single'){
+      return `<div class="field"><label>${esc(s.label)}</label><div style="display:flex; align-items:center;"><input type="date" data-stage-idx="${idx}" data-stage-field="date" value="${s.date||''}" style="flex:1;">${doneBox}</div></div>`;
+    }
+    return `<div class="field-row" style="align-items:flex-end;">
+      <div class="field"><label>${esc(s.label)} — início</label><input type="date" data-stage-idx="${idx}" data-stage-field="startDate" value="${s.startDate||''}"></div>
+      <div class="field"><label>${esc(s.label)} — fim${s.key==='inscricao'?' ('+INSCRICAO_DIAS+' dias)':''}</label><div style="display:flex; align-items:center;"><input type="date" data-stage-idx="${idx}" data-stage-field="endDate" value="${s.endDate||''}" style="flex:1;">${doneBox}</div></div>
+    </div>`;
+  }
+  openModal('Cronograma de renovação', `
+    <div class="hint" style="margin-bottom:2px;">${mode==='auto'?'Gerado automaticamente a partir de '+PROCESS_LEAD_DAYS+' dias antes do fim do mandato.':'Preenchimento manual.'} Datas e etapas concluídas podem ser ajustadas a qualquer momento, até a posse.</div>
+    ${stages.map(stageRowHtml).join('')}
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar cronograma</button>`);
+
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.querySelectorAll('[data-stage-idx]').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const idx = Number(e.target.dataset.stageIdx);
+      const field = e.target.dataset.stageField;
+      if(field==='done'){ stages[idx].done = e.target.checked; return; }
+      stages[idx][field] = e.target.value;
+      if(stages[idx].key==='inscricao' && field==='startDate' && e.target.value && !stages[idx].endDate){
+        stages[idx].endDate = addDaysISO(e.target.value, INSCRICAO_DIAS);
+        const endInput = document.querySelector(`[data-stage-idx="${idx}"][data-stage-field="endDate"]`);
+        if(endInput) endInput.value = stages[idx].endDate;
+      }
+    });
+  });
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const allDone = stages.every(s=>s.done);
+    const ok = await dbUpdate('mandates', mandate.id, {
+      renewal: {mode, status: allDone?'concluido':'em_andamento', updatedAt: new Date().toISOString(), stages}
+    });
+    if(ok){
+      closeModal();
+      toast(allDone? 'Processo de renovação concluído — posse registrada.' : 'Cronograma salvo.', 'ok');
+    }
+  });
+}
+
+/* ---------------- Technician modal ---------------- */
+/* ---------------- Technician modal (edição de técnico já existente) ---------------- */
+function openTechModal(tech){
+  openModal(tech?'Editar técnico':'Cadastrar técnico responsável', `
+    <div class="field"><label>Nome completo *</label><input id="fTecName" value="${tech?esc(tech.name):''}"></div>
+    <div class="field-row">
+      <div class="field"><label>Tipo</label>
+        <select id="fTecType">
+          <option value="Técnico de Segurança do Trabalho" ${tech&&tech.type==='Técnico de Segurança do Trabalho'?'selected':''}>Técnico de Segurança do Trabalho</option>
+          <option value="Engenheiro de Segurança" ${tech&&tech.type==='Engenheiro de Segurança'?'selected':''}>Engenheiro de Segurança</option>
+          <option value="Médico do Trabalho" ${tech&&tech.type==='Médico do Trabalho'?'selected':''}>Médico do Trabalho</option>
+          <option value="Enfermeiro do Trabalho" ${tech&&tech.type==='Enfermeiro do Trabalho'?'selected':''}>Enfermeiro do Trabalho</option>
+        </select>
+      </div>
+      <div class="field"><label>Nº de registro</label><input id="fTecReg" placeholder="MTE / CREA / conselho" value="${tech?esc(tech.registrationNumber||''):''}"></div>
+    </div>
+    <div class="field"><label>Contato (e-mail/telefone)</label><input id="fTecContact" value="${tech?esc(tech.contact||''):''}"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const name = document.getElementById('fTecName').value.trim();
+    if(!name){ toast('Informe o nome do técnico.', 'err'); return; }
+    const data = {
+      name, type: document.getElementById('fTecType').value,
+      registrationNumber: document.getElementById('fTecReg').value.trim(),
+      contact: document.getElementById('fTecContact').value.trim()
+    };
+    let ok;
+    if(tech) ok = await dbUpdate('technicians', tech.id, data);
+    else ok = await dbAdd('technicians', data);
+    if(ok){ closeModal(); toast('Técnico salvo.', 'ok'); }
+  });
+}
+
+/* ---------------- top-level bindings ---------------- */
+document.getElementById('btnAddUnit').addEventListener('click', ()=>openUnitModal());
+
+/* ---------------- boot ---------------- */
+initCapabilities();
+
+})();
+</script>
+</body>
+</html>
