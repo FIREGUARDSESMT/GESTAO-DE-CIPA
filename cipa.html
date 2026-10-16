@@ -997,6 +997,7 @@ const TABS = [
   {id:'mandatos', label:'Mandatos'},
   {id:'membros', label:'Membros'},
   {id:'documentos', label:'Documentos'},
+  {id:'atas', label:'Atas'},
   {id:'treinamentos', label:'Treinamentos'},
   {id:'alertas', label:'Alertas'}
 ];
@@ -1064,6 +1065,7 @@ function renderMain(){
   else if(S.currentTab==='mandatos') html = renderMandatos(unit);
   else if(S.currentTab==='membros') html = renderMembros(unit);
   else if(S.currentTab==='documentos') html = renderDocumentos(unit);
+  else if(S.currentTab==='atas') html = renderAtas(unit);
   else if(S.currentTab==='treinamentos') html = renderTreinamentos(unit);
   else if(S.currentTab==='alertas') html = renderAlertasTab(unit);
   content.innerHTML = html;
@@ -1759,6 +1761,85 @@ function renderDocumentos(unit){
 }
 
 /* ---------------- Treinamentos ---------------- */
+/* ---------------- Atas de reunião ---------------- */
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const ATA_TIPOS = ['Ordinária','Extraordinária','Posse','Outra'];
+
+function monthsOfMandate(m){
+  const out = [];
+  if(!m.startDate || !m.endDate || m.startDate >= m.endDate) return out;
+  let y = +m.startDate.slice(0,4), mo = +m.startDate.slice(5,7);
+  const ey = +m.endDate.slice(0,4), emo = +m.endDate.slice(5,7);
+  while((y<ey || (y===ey && mo<=emo)) && out.length<14){
+    out.push({key: y+'-'+String(mo).padStart(2,'0'), label: MESES[mo-1]+'/'+y});
+    mo++; if(mo>12){ mo = 1; y++; }
+  }
+  return out;
+}
+function mandateAtas(unitId, mandateId){
+  return S.documents.filter(d=>d.unitId===unitId && d.mandateId===mandateId && d.kind==='ata')
+    .sort((a,b)=>(a.reuniaoData||'').localeCompare(b.reuniaoData||''));
+}
+
+function renderAtas(unit){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){
+    return `<div class="empty"><div class="big">${ico('doc','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de registrar atas.</div>`;
+  }
+  const cur = activeMandate(unit.id) || mandates[0];
+  const curMonth = todayISO().slice(0,7);
+  const ataLine = d => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0;">
+      <span><b>${esc(d.reuniaoTipo||'Ata')}</b> · ${d.reuniaoData?fmtDate(d.reuniaoData):'sem data'}${d.pauta?`<span class="faint"> · ${esc(d.pauta.length>60?d.pauta.slice(0,60)+'…':d.pauta)}</span>`:''}</span>
+      <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}">Abrir</button>
+      <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
+    </div>`;
+  return `
+  <div class="row" style="margin-bottom:8px; align-items:flex-start;">
+    <div>
+      <div class="sect-title" style="margin:0;">Atas de reunião</div>
+      <div class="muted" style="font-size:13px; margin-top:2px; max-width:680px;">Registre e anexe a ata de cada reunião da CIPA. As atas ficam guardadas junto da documentação da gestão (aba Documentos). A CIPA se reúne ordinariamente todo mês, então cada mês da gestão aparece abaixo com a situação da ata.</div>
+    </div>
+    <button class="btn btn-primary" id="btnNewAta" data-mandate="${cur.id}">${ico('plus')}Registrar ata</button>
+  </div>
+  <div style="height:12px;"></div>
+  ${mandates.map(m=>{
+    const months = monthsOfMandate(m);
+    const atas = mandateAtas(unit.id, m.id);
+    const byMonth = {};
+    atas.forEach(a=>{ const k = (a.reuniaoData||'').slice(0,7); (byMonth[k] = byMonth[k]||[]).push(a); });
+    const isCur = cur.id===m.id;
+    const expanded = S._expandedMandates['ata_'+m.id]!==undefined ? S._expandedMandates['ata_'+m.id] : isCur;
+    const withAta = months.filter(x=>byMonth[x.key]).length;
+    const pending = months.filter(x=>!byMonth[x.key] && x.key<curMonth).length;
+    const monthKeys = new Set(months.map(x=>x.key));
+    const extras = atas.filter(a=>!monthKeys.has((a.reuniaoData||'').slice(0,7)));
+    const head = `<div class="panel-head">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</span>${isCur?'<span class="pill pill-info">Gestão atual</span>':'<span class="pill pill-muted">Encerrada</span>'}</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span class="muted" style="font-weight:400;font-size:13px;">${withAta} de ${months.length} meses com ata${pending?` · <b style="color:var(--warn)">${pending} pendente(s)</b>`:''}</span>
+          <button class="btn btn-sm" data-toggle-ata="${m.id}">${expanded?'Ocultar':'Ver atas'}</button>
+        </div>
+      </div>`;
+    const rows = months.map(x=>{
+      const list = byMonth[x.key] || [];
+      let pill;
+      if(list.length) pill = `<span class="pill pill-ok">Ata anexada</span>`;
+      else if(x.key < curMonth) pill = `<span class="pill pill-warn">Pendente</span>`;
+      else if(x.key === curMonth) pill = `<span class="pill pill-info">Neste mês</span>`;
+      else pill = `<span class="pill pill-muted">Previsto</span>`;
+      return `<tr>
+        <td style="white-space:nowrap;font-weight:500;">${x.label}</td>
+        <td>${pill}</td>
+        <td>${list.length ? list.map(ataLine).join('') : '<span class="faint">Nenhuma ata registrada</span>'}</td>
+        <td><button class="btn btn-sm" data-add-ata="1" data-mandate="${m.id}" data-month="${x.key}">${ico('upload')}Anexar ata</button></td>
+      </tr>`;
+    }).join('');
+    const extraRows = extras.length ? `<tr><td style="font-weight:500;">Fora do período</td><td><span class="pill pill-muted">Outras</span></td><td>${extras.map(ataLine).join('')}</td><td></td></tr>` : '';
+    const body = expanded ? `<table><thead><tr><th>Mês</th><th>Situação</th><th>Atas</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="faint" style="padding:16px;">Datas do mandato inválidas.</td></tr>'}${extraRows}</tbody></table>` : '';
+    return `<section class="panel" style="margin-bottom:16px;">${head}${body}</section>`;
+  }).join('')}`;
+}
+
 function renderTreinamentos(unit){
   const mandates = unitMandates(unit.id);
   const memberIds = new Set();
@@ -1858,6 +1939,14 @@ function bindTabEvents(unit){
     const n = await deleteMembersCascade(ids);
     S._selMembers = {};
     toast(n+' membro(s) excluído(s).', 'ok');
+    renderMain();
+  });
+  b('#btnNewAta', el=>openAtaModal(unit, el.dataset.mandate));
+  b('[data-add-ata]', el=>openAtaModal(unit, el.dataset.mandate, el.dataset.month));
+  b('[data-toggle-ata]', el=>{
+    const id = el.dataset.toggleAta, key = 'ata_'+id;
+    const cur = S._expandedMandates[key]!==undefined ? S._expandedMandates[key] : ((activeMandate(unit.id)||{}).id===id);
+    S._expandedMandates[key] = !cur;
     renderMain();
   });
   b('#btnDownloadTrTemplate', ()=>downloadTrainingTemplate());
@@ -2354,6 +2443,53 @@ function openGroupTrainingModal(unit){
     }
     closeModal();
     toast(ok+' treinamento(s) lançado(s).'+(dup?' '+dup+' já existia(m).':'')+(fail?' '+fail+' falharam.':''), fail?'err':'ok');
+  });
+}
+
+/* ---------------- Atas: registrar e anexar ---------------- */
+function openAtaModal(unit, presetMandateId, presetMonth){
+  const mandates = unitMandates(unit.id);
+  if(!mandates.length){ toast('Cadastre um mandato antes de registrar atas.', 'err'); return; }
+  if(!S.assets){ toast('Upload de arquivos não está disponível.', 'err'); return; }
+  let curM = byId(mandates, presetMandateId) || activeMandate(unit.id) || mandates[0];
+  const today = todayISO();
+  const lastDay = key => { const y = +key.slice(0,4), mo = +key.slice(5,7); return key+'-'+String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2,'0'); };
+  openModal('Registrar ata de reunião', `
+    <div class="field"><label>Gestão (mandato) *</label>
+      <select id="aMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===curM.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select></div>
+    <div class="field-row">
+      <div class="field"><label>Tipo da reunião *</label><select id="aTipo">${ATA_TIPOS.map(t=>`<option value="${t}">${t}</option>`).join('')}</select></div>
+      <div class="field"><label>Data da reunião *</label><input type="date" id="aData" ${presetMonth?`min="${presetMonth}-01" max="${lastDay(presetMonth)}"`:''}></div>
+    </div>
+    ${presetMonth ? `<div class="hint">Mês selecionado: ${MESES[+presetMonth.slice(5,7)-1]}/${presetMonth.slice(0,4)}.</div>` : ''}
+    <div class="field"><label>Pauta / observações (opcional)</label><textarea id="aPauta" rows="3" placeholder="Ex.: análise de acidentes, inspeção de extintores..."></textarea></div>
+    <div class="field"><label>Arquivo da ata * (até 5 MB)</label><input type="file" id="aFile"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar ata</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('aMandate').addEventListener('change', e=>{ curM = byId(mandates, e.target.value); });
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const tipo = document.getElementById('aTipo').value;
+    const data = document.getElementById('aData').value;
+    const pauta = document.getElementById('aPauta').value.trim();
+    const file = document.getElementById('aFile').files[0];
+    if(!data){ toast('Informe a data da reunião.', 'err'); return; }
+    if(data < curM.startDate || data > curM.endDate){ toast('A data da reunião precisa estar dentro da gestão ('+fmtDate(curM.startDate)+' a '+fmtDate(curM.endDate)+').', 'err'); return; }
+    if(!file){ toast('Anexe o arquivo da ata.', 'err'); return; }
+    const btn = document.getElementById('mSave'); btn.disabled = true; btn.textContent = 'Enviando…';
+    try{
+      const res = await S.assets.upload(file);
+      await dbAdd('documents', {
+        unitId: unit.id, mandateId: curM.id, kind:'ata', category:'Ata de reunião',
+        name: 'Ata '+tipo.toLowerCase()+' — '+fmtDate(data),
+        reuniaoTipo: tipo, reuniaoData: data, pauta,
+        assetId: res.id, url: res.url||'', contentType: res.contentType, sizeBytes: res.sizeBytes,
+        uploadedAt: new Date().toISOString()
+      });
+      closeModal(); toast('Ata registrada e anexada à documentação.', 'ok');
+    }catch(e){
+      toast('Falha no envio: '+(e.message||e.code||e), 'err');
+      btn.disabled = false; btn.textContent = 'Salvar ata';
+    }
   });
 }
 
