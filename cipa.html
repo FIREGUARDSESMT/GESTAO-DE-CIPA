@@ -289,6 +289,7 @@ const S = {
   _dimNumEmp: '',
   _dimBuffer: null,
   _expandedMandates: {},
+  _selMembers: {},
   _relatorioTipo: 'geral',
   _relatorioUnitId: null,
   unsub: [],
@@ -357,10 +358,17 @@ function matchEnumValue(value, options){
 function parseFlexibleDate(str){
   if(!str) return null;
   str = str.trim();
-  if(/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
-  return null;
+  let y, mo, d;
+  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m){ y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else {
+    m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(!m) return null;
+    d = +m[1]; mo = +m[2]; y = +m[3];
+  }
+  const t = new Date(Date.UTC(y, mo-1, d));
+  if(t.getUTCFullYear()!==y || t.getUTCMonth()!==mo-1 || t.getUTCDate()!==d) return null; // data inexistente (ex.: 32/13/2026)
+  return String(y).padStart(4,'0')+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');
 }
 
 function parseCSVTable(text){
@@ -390,7 +398,6 @@ function parseCSVTable(text){
 function validateImportRow(fields, rowIndex){
   const errors = [];
   if(!fields.name) errors.push('nome ausente');
-  if(!fields.matricula) errors.push('matrícula ausente');
   const role = matchEnumValue(fields.role, IMPORT_ROLE_OPTIONS);
   if(!role) errors.push('função na CIPA inválida ("'+(fields.role||'')+'")');
   const type = matchEnumValue(fields.type, IMPORT_TYPE_OPTIONS);
@@ -398,7 +405,7 @@ function validateImportRow(fields, rowIndex){
   const rep = matchEnumValue(fields.representationType, IMPORT_REP_OPTIONS);
   if(!rep) errors.push('representação inválida ("'+(fields.representationType||'')+'")');
   const dataPosse = parseFlexibleDate(fields.dataPosse);
-  return {rowIndex, name:fields.name, matricula:fields.matricula, jobTitle:fields.jobTitle||'', role, type, representationType:rep, dataPosse, errors};
+  return {rowIndex, name:fields.name, matricula:fields.matricula||'', setor:fields.setor||'', jobTitle:fields.jobTitle||'', role, type, representationType:rep, dataPosse, errors};
 }
 
 function parseCSVMembers(text){
@@ -408,6 +415,7 @@ function parseCSVMembers(text){
   const idx = {
     name: header.findIndex(h=>h==='nome'||h==='nomecompleto'),
     matricula: header.findIndex(h=>h==='matricula'),
+    setor: header.findIndex(h=>h==='setor'||h==='setordocipeiro'),
     jobTitle: header.findIndex(h=>h==='cargo'||h==='cargofuncao'||h==='cargofunca'),
     role: header.findIndex(h=>h==='funcaonacipa'||h==='funcao'),
     type: header.findIndex(h=>h==='tipo'),
@@ -420,7 +428,7 @@ function parseCSVMembers(text){
     if(cells.every(c=>!c || !c.trim())) continue;
     const get = key => idx[key]>=0 ? (cells[idx[key]]||'').trim() : '';
     rows.push(validateImportRow({
-      name: get('name'), matricula: get('matricula'), jobTitle: get('jobTitle'),
+      name: get('name'), matricula: get('matricula'), setor: get('setor'), jobTitle: get('jobTitle'),
       role: get('role'), type: get('type'), representationType: get('representationType'),
       dataPosse: get('dataPosse')
     }, i+1));
@@ -428,16 +436,96 @@ function parseCSVMembers(text){
   return rows;
 }
 
-function downloadMemberTemplate(){
-  const header = 'Nome completo;Matrícula;Cargo/Função;Função na CIPA;Tipo;Representação;Data da Posse';
-  const example = 'João da Silva;00123;Operador de Produção;Titular;Eleito;Empregados;15/03/2026';
+function downloadCSVFile(filename, header, example){
   const csv = '\uFEFF' + header + '\r\n' + example + '\r\n';
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'modelo_importacao_cipeiros.csv';
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function downloadMemberTemplate(){
+  downloadCSVFile('modelo_importacao_cipeiros.csv',
+    'Nome completo;Matrícula;Setor;Cargo/Função;Função na CIPA;Tipo;Representação;Data da Posse',
+    'João da Silva;00123;Produção;Operador de Produção;Titular;Eleito;Empregados;15/03/2026');
+}
+function downloadTrainingTemplate(){
+  downloadCSVFile('modelo_importacao_treinamentos.csv',
+    'Matrícula;Nome completo;Curso;Carga horária;Data de conclusão;Validade',
+    '00123;João da Silva;Curso básico de CIPA (NR-05);20;15/03/2026;15/03/2027');
+}
+
+/* ---------------- treinamentos em massa: leitura e validação da planilha ---------------- */
+function unitMembersAll(unitId){
+  const ids = new Set(unitMandates(unitId).map(m=>m.id));
+  return S.members.filter(m=>ids.has(m.mandateId));
+}
+function findMemberForTraining(unitId, name, matricula){
+  const all = unitMembersAll(unitId);
+  const mat = normStr(matricula), nm = normStr(name);
+  const startOf = id => { const m = byId(S.mandates, id); return m ? (m.startDate||'') : ''; };
+  const latest = arr => arr.slice().sort((a,b)=>startOf(b.mandateId).localeCompare(startOf(a.mandateId)))[0];
+  if(mat){
+    let c = all.filter(m=>normStr(m.matricula)===mat);
+    if(!c.length) return {error:'membro não encontrado (matrícula '+matricula+')'};
+    if(nm){
+      const byName = c.filter(m=>normStr(m.name)===nm);
+      if(!byName.length) return {error:'matrícula e nome não conferem'};
+      c = byName;
+    }
+    return {member: latest(c)};
+  }
+  if(!nm) return {error:'informe a matrícula ou o nome'};
+  const c = all.filter(m=>normStr(m.name)===nm);
+  if(!c.length) return {error:'membro não encontrado ("'+name+'")'};
+  const mats = new Set(c.map(m=>normStr(m.matricula)).filter(Boolean));
+  if(mats.size>1) return {error:'nome com matrículas diferentes; informe a matrícula'};
+  return {member: latest(c)};
+}
+function trainingDuplicate(memberId, course, done){
+  return S.trainings.some(t=>t.memberId===memberId && normStr(t.courseName)===normStr(course) && t.completionDate===done);
+}
+function parseCSVTrainings(text, unitId){
+  const table = parseCSVTable(text);
+  if(table.length===0) return [];
+  const header = table[0].map(normHeaderKey);
+  const find = (...names)=>header.findIndex(h=>names.includes(h));
+  const idx = {
+    matricula: find('matricula'),
+    name: find('nome','nomecompleto'),
+    course: find('curso','treinamento','cursotreinamento','nomedocurso'),
+    hours: find('cargahoraria','horas','ch'),
+    done: find('datadeconclusao','dataconclusao','conclusao'),
+    expiry: find('validade','datadevalidade','datavalidade')
+  };
+  const rows = [], seen = new Set();
+  for(let i=1;i<table.length;i++){
+    const cells = table[i];
+    if(cells.every(c=>!c || !c.trim())) continue;
+    const get = k => idx[k]>=0 ? (cells[idx[k]]||'').trim() : '';
+    const errors = [];
+    const found = findMemberForTraining(unitId, get('name'), get('matricula'));
+    if(found.error) errors.push(found.error);
+    const course = get('course');
+    if(!course) errors.push('curso ausente');
+    const done = parseFlexibleDate(get('done'));
+    if(!done) errors.push('data de conclusão ausente ou inválida');
+    const expRaw = get('expiry');
+    const expiry = expRaw ? parseFlexibleDate(expRaw) : null;
+    if(expRaw && !expiry) errors.push('validade inválida');
+    if(done && expiry && expiry < done) errors.push('validade anterior à conclusão');
+    const hRaw = get('hours');
+    const hours = hRaw ? Number(hRaw.replace(',','.')) : null;
+    if(hRaw && (isNaN(hours) || hours<0)) errors.push('carga horária inválida');
+    if(found.member && course && done){
+      const key = found.member.id+'|'+normStr(course)+'|'+done;
+      if(trainingDuplicate(found.member.id, course, done) || seen.has(key)) errors.push('já cadastrado');
+      seen.add(key);
+    }
+    rows.push({rowIndex:i+1, member:found.member||null, memberName:found.member?found.member.name:(get('name')||get('matricula')), courseName:course, hours:hours||null, completionDate:done, expiryDate:expiry, errors});
+  }
+  return rows;
 }
 
 /* ---------------- capability init ---------------- */
@@ -684,14 +772,18 @@ function activeMandate(unitId){
 
 // consecutive mandate check: mesmo nome completo + matrícula, na mesma unidade, no mandato imediatamente anterior
 function checkConsecutive(unitId, name, matricula, currentMandateId){
-  if(!name || !matricula) return null;
+  if(!name) return null;
   const list = unitMandates(unitId);
   const idx = list.findIndex(m=>m.id===currentMandateId);
   if(idx === -1 || idx+1 >= list.length) return null;
-  const prevMandate = list[idx+1]; // sorted desc, so next index = immediately previous mandate
-  const prevMembers = mandateMembers(prevMandate.id);
-  const match = prevMembers.find(mm => normStr(mm.name)===normStr(name) && normStr(mm.matricula)===normStr(matricula) && mm.matricula);
-  if(match) return {prevMandate, match};
+  const prevMandate = list[idx+1]; // ordenado do mais novo ao mais antigo: o próximo é a gestão imediatamente anterior
+  const n = normStr(name), mat = normStr(matricula);
+  const match = mandateMembers(prevMandate.id).find(mm=>{
+    if(normStr(mm.name)!==n) return false;
+    if(mat && normStr(mm.matricula)) return normStr(mm.matricula)===mat; // com matrícula nos dois lados: confere nome e matrícula
+    return true; // sem matrícula em algum dos lados: confere só pelo nome
+  });
+  if(match) return {prevMandate, match, byNameOnly: !(mat && normStr(match.matricula))};
   return null;
 }
 
@@ -895,7 +987,7 @@ function renderSidebar(){
     </div>`;
   }).join('');
   el.querySelectorAll('.unit-item').forEach(item=>{
-    item.addEventListener('click', ()=>{ S.currentUnitId = item.dataset.unit; S.currentTab='visao'; renderSidebar(); renderMain(); });
+    item.addEventListener('click', ()=>{ S.currentUnitId = item.dataset.unit; S.currentTab='visao'; S._selMembers = {}; renderSidebar(); renderMain(); });
   });
 }
 
@@ -1182,10 +1274,11 @@ function bindRenewalsDashboard(){
 /* ---------------- Relatórios (gerais ou individuais) ---------------- */
 function renderStabilityTable(rows){
   if(rows.length===0) return `<div class="faint">Nenhum membro.</div>`;
-  return `<table><thead><tr><th>Nome</th><th>Unidade</th><th>Função</th><th>Representação</th><th>Estabilidade</th></tr></thead><tbody>
+  return `<table><thead><tr><th>Nome</th><th>Unidade</th><th>Setor</th><th>Função</th><th>Representação</th><th>Estabilidade</th></tr></thead><tbody>
   ${rows.map(({member,mandate,unit})=>`<tr>
     <td><b>${esc(member.name)}</b>${member.matricula?`<div class="faint">Matrícula: ${esc(member.matricula)}</div>`:''}</td>
     <td>${esc(unit.name)}</td>
+    <td>${esc(member.setor||'—')}</td>
     <td>${esc(member.role||'—')}</td>
     <td>${esc(member.representationType||'—')}</td>
     <td>${stabilityCellHtml(member, mandate)}</td>
@@ -1566,12 +1659,17 @@ function renderMandatos(unit){
 }
 
 /* ---------------- Membros (por gestão) ---------------- */
+function selectedMemberIds(unit){
+  return Object.keys(S._selMembers).filter(id=>{ if(!S._selMembers[id]) return false; const m = byId(S.members, id); return m && m.unitId===unit.id; });
+}
+
 function renderMembros(unit){
   const mandates = unitMandates(unit.id);
   if(mandates.length===0){
     return `<div class="empty"><div class="big">${ico('usuario','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de adicionar membros.</div>`;
   }
   const defaultMandate = activeMandate(unit.id) || mandates[0];
+  const nSel = selectedMemberIds(unit).length;
   return `
   <div class="row" style="margin-bottom:8px; align-items:flex-start;">
     <div>
@@ -1579,6 +1677,7 @@ function renderMembros(unit){
       <div class="muted" style="font-size:13px; margin-top:2px; max-width:640px;">Eleitos pelos empregados têm estabilidade de 2 anos a partir da posse, calculada automaticamente. Indicados pelo empregador não têm.</div>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      ${nSel ? `<button class="btn btn-danger" id="btnBulkDelMembers">Excluir selecionados (${nSel})</button><button class="btn" id="btnClearSel">Limpar seleção</button>` : ''}
       <button class="btn" id="btnDownloadTemplate">${ico('download')}Baixar modelo</button>
       <button class="btn" id="btnImportMembers">${ico('upload')}Importar planilha</button>
       <button class="btn btn-primary" id="btnNewMember" data-mandate="${defaultMandate.id}">${ico('plus')}Novo membro</button>
@@ -1589,16 +1688,19 @@ function renderMembros(unit){
     const members = mandateMembers(m.id);
     const isCurrent = defaultMandate.id===m.id;
     const expanded = S._expandedMandates[m.id]!==undefined ? S._expandedMandates[m.id] : isCurrent;
+    const allSel = members.length>0 && members.every(mm=>S._selMembers[mm.id]);
     const head = `<div class="panel-head">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</span>${isCurrent?'<span class="pill pill-info">Gestão atual</span>':'<span class="pill pill-muted">Encerrada</span>'}</div>
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span class="muted" style="font-weight:400;font-size:13px;">${members.length} membro(s)</span>
           ${expanded ? `<button class="btn btn-sm" data-add-member-mandate="${m.id}">${ico('plus')}Adicionar</button>` : ''}
           <button class="btn btn-sm" data-toggle-mandate="${m.id}">${expanded?'Ocultar':'Ver membros'}</button></div>
       </div>`;
-    const body = expanded ? `<table><thead><tr><th>Nome</th><th>Função</th><th>Tipo</th><th>Representação</th><th>Posse</th><th>Estabilidade</th><th></th></tr></thead><tbody>
-      ${members.length===0 ? `<tr><td colspan="7" class="faint" style="padding:16px;text-align:center;">Nenhum membro nesta gestão.</td></tr>` :
+    const body = expanded ? `<table><thead><tr><th style="width:40px;"><input type="checkbox" data-sel-all="${m.id}" ${allSel?'checked':''} ${members.length?'':'disabled'} aria-label="Selecionar todos desta gestão"></th><th>Nome</th><th>Setor</th><th>Função</th><th>Tipo</th><th>Representação</th><th>Posse</th><th>Estabilidade</th><th></th></tr></thead><tbody>
+      ${members.length===0 ? `<tr><td colspan="9" class="faint" style="padding:16px;text-align:center;">Nenhum membro nesta gestão.</td></tr>` :
       members.map(mm=>`<tr${mm.consecutiveAlert?' style="background:var(--warn-soft);"':''}>
+        <td><input type="checkbox" data-sel-member="${mm.id}" ${S._selMembers[mm.id]?'checked':''} aria-label="Selecionar ${esc(mm.name)}"></td>
         <td><div style="font-weight:500;">${esc(mm.name)}${mm.consecutiveAlert?' <span class="pill pill-warn" style="margin-left:6px;">2º mandato?</span>':''}</div>${mm.matricula?`<div class="faint">Matrícula ${esc(mm.matricula)}</div>`:''}</td>
+        <td>${mm.setor? esc(mm.setor) : '<span class="faint">—</span>'}</td>
         <td>${esc(mm.role||'—')}</td>
         <td>${esc(mm.type||'—')}</td>
         <td>${esc(mm.representationType||'—')}</td>
@@ -1666,8 +1768,13 @@ function renderTreinamentos(unit){
 
   return `
   <div class="row" style="margin-bottom:12px;">
-    <div class="row-title">Treinamentos e certificados</div>
-    <button class="btn btn-primary" id="btnNewTraining" ${unitMembers.length===0?'disabled title="Cadastre membros primeiro"':''}>${ico('plus')}Novo registro</button>
+    <div class="sect-title" style="margin:0;">Treinamentos e certificados</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" id="btnDownloadTrTemplate">${ico('download')}Baixar modelo</button>
+      <button class="btn" id="btnImportTrainings" ${unitMembers.length===0?'disabled title="Cadastre membros primeiro"':''}>${ico('upload')}Importar planilha</button>
+      <button class="btn" id="btnGroupTraining" ${unitMembers.length===0?'disabled title="Cadastre membros primeiro"':''}>${ico('usuario')}Lançar em grupo</button>
+      <button class="btn btn-primary" id="btnNewTraining" ${unitMembers.length===0?'disabled title="Cadastre membros primeiro"':''}>${ico('plus')}Novo registro</button>
+    </div>
   </div>
   ${trainings.length===0? `<div class="empty"><div class="big">${ico('usuario','style="width:32px;height:32px"')}</div>Nenhum treinamento registrado.</div>` :
   `<div class="card" style="padding:0;"><table>
@@ -1728,8 +1835,34 @@ function bindTabEvents(unit){
     openMemberModal(unit, mem.mandateId, mem);
   });
   b('[data-del-member]', async el=>{
-    if(confirm('Excluir este membro?')){ await dbDelete('members', el.dataset.delMember); toast('Membro excluído.', 'ok'); }
+    const id = el.dataset.delMember;
+    const nTr = S.trainings.filter(t=>t.memberId===id).length;
+    if(confirm('Excluir este membro?'+(nTr ? ' Os '+nTr+' treinamento(s) dele também serão excluídos.' : ''))){
+      await deleteMembersCascade([id]); delete S._selMembers[id]; toast('Membro excluído.', 'ok');
+    }
   });
+  document.querySelectorAll('[data-sel-member]').forEach(el=>el.addEventListener('change', ()=>{
+    S._selMembers[el.dataset.selMember] = el.checked; renderMain();
+  }));
+  document.querySelectorAll('[data-sel-all]').forEach(el=>el.addEventListener('change', ()=>{
+    mandateMembers(el.dataset.selAll).forEach(mm=>{ S._selMembers[mm.id] = el.checked; });
+    renderMain();
+  }));
+  b('#btnClearSel', ()=>{ S._selMembers = {}; renderMain(); });
+  b('#btnBulkDelMembers', async ()=>{
+    const ids = selectedMemberIds(unit);
+    if(!ids.length) return;
+    const nTr = S.trainings.filter(t=>ids.includes(t.memberId)).length;
+    const msg = 'Excluir '+ids.length+' membro(s)?'+(nTr ? ' Os '+nTr+' treinamento(s) e certificados deles também serão excluídos.' : '')+'\n\nEsta ação não pode ser desfeita.';
+    if(!confirm(msg)) return;
+    const n = await deleteMembersCascade(ids);
+    S._selMembers = {};
+    toast(n+' membro(s) excluído(s).', 'ok');
+    renderMain();
+  });
+  b('#btnDownloadTrTemplate', ()=>downloadTrainingTemplate());
+  b('#btnImportTrainings', ()=>openImportTrainingsModal(unit));
+  b('#btnGroupTraining', ()=>openGroupTrainingModal(unit));
 
   b('#btnNewDoc', el=>openDocModal(unit, el.dataset.mandate));
   b('[data-add-doc-mandate]', el=>openDocModal(unit, el.dataset.addDocMandate));
@@ -1936,9 +2069,11 @@ function openMemberModal(unit, mandateId, member){
     </div>
     <div class="field"><label>Nome completo *</label><input id="fMemName" value="${member?esc(member.name):''}"></div>
     <div class="field-row">
-      <div class="field"><label>Matrícula *</label><input id="fMemMatricula" placeholder="Ex: 00123" value="${member?esc(member.matricula||''):''}"></div>
+      <div class="field"><label>Matrícula (opcional)</label><input id="fMemMatricula" placeholder="Ex: 00123" value="${member?esc(member.matricula||''):''}"></div>
       <div class="field"><label>Cargo/função na empresa</label><input id="fMemJob" value="${member?esc(member.jobTitle||''):''}"></div>
     </div>
+    <div class="field"><label for="fMemSetor">Setor</label><input id="fMemSetor" list="setoresList" placeholder="Ex: Produção, Manutenção" value="${member?esc(member.setor||''):''}">
+      <datalist id="setoresList">${[...new Set(unitMembersAll(unit.id).map(x=>x.setor).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}"></option>`).join('')}</datalist></div>
     <div class="field-row">
       <div class="field"><label>Função na CIPA</label>
         <select id="fMemRole">
@@ -1997,10 +2132,10 @@ function openMemberModal(unit, mandateId, member){
     const matricula = document.getElementById('fMemMatricula').value.trim();
     const curMandateId = document.getElementById('fMemMandate').value;
     const box = document.getElementById('consecWarning');
-    if(!name || !matricula){ box.innerHTML=''; return null; }
+    if(!name){ box.innerHTML=''; return null; }
     const res = checkConsecutive(unit.id, name, matricula, curMandateId);
     if(res){
-      box.innerHTML = alertBoxHtml({level:'warn', text:'Esta pessoa (mesmo nome e matrícula) também foi membro no mandato anterior ('+fmtDate(res.prevMandate.startDate)+'–'+fmtDate(res.prevMandate.endDate)+', função: '+esc(res.match.role||'—')+'). Isso pode configurar 2º mandato consecutivo — verifique a elegibilidade conforme a NR-05.'});
+      box.innerHTML = alertBoxHtml({level:'warn', text:'Esta pessoa ('+(res.byNameOnly?'mesmo nome, sem matrícula para conferir':'mesmo nome e matrícula')+') também foi membro no mandato anterior ('+fmtDate(res.prevMandate.startDate)+'–'+fmtDate(res.prevMandate.endDate)+', função: '+esc(res.match.role||'—')+'). Isso pode configurar 2º mandato consecutivo — verifique a elegibilidade conforme a NR-05.'});
     } else box.innerHTML='';
     return res;
   }
@@ -2014,10 +2149,10 @@ function openMemberModal(unit, mandateId, member){
     const matricula = document.getElementById('fMemMatricula').value.trim();
     const selectedMandateId = document.getElementById('fMemMandate').value;
     if(!name){ toast('Informe o nome do membro.', 'err'); return; }
-    if(!matricula){ toast('Informe a matrícula do membro.', 'err'); return; }
     const consec = await checkAndWarn();
     const data = {
       unitId: unit.id, mandateId: selectedMandateId, name, matricula,
+      setor: document.getElementById('fMemSetor').value.trim(),
       jobTitle: document.getElementById('fMemJob').value.trim(),
       role: document.getElementById('fMemRole').value,
       type: document.getElementById('fMemType').value,
@@ -2044,7 +2179,7 @@ function openImportMembersModal(unit){
       <select id="impMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===defaultMandate.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select>
     </div>
     <div class="field"><label>Arquivo (.csv) *</label><input type="file" id="impFile" accept=".csv,text/csv"></div>
-    <div class="hint">Use o modelo (botão "Baixar modelo" na tela de Membros). Colunas esperadas: Nome completo, Matrícula, Cargo/Função, Função na CIPA, Tipo, Representação, Data da Posse (DD/MM/AAAA, opcional — usada para calcular a estabilidade automática de eleitos). Apague ou edite a linha de exemplo antes de importar.</div>
+    <div class="hint">Use o modelo (botão "Baixar modelo" na tela de Membros). Colunas: Nome completo, Matrícula (opcional), Setor, Cargo/Função, Função na CIPA, Tipo, Representação e Data da Posse (DD/MM/AAAA, opcional; calcula a estabilidade dos eleitos). Apague ou edite a linha de exemplo antes de importar.</div>
     <div id="impPreview"></div>
   `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mImport" disabled>Importar</button>`);
 
@@ -2092,7 +2227,7 @@ function openImportMembersModal(unit){
       const consec = checkConsecutive(unit.id, r.name, r.matricula, mandateId);
       if(consec) consecCount++;
       const id = await dbAdd('members', {
-        unitId: unit.id, mandateId, name:r.name, matricula:r.matricula,
+        unitId: unit.id, mandateId, name:r.name, matricula:r.matricula||'', setor:r.setor||'',
         jobTitle:r.jobTitle||'', role:r.role, type:r.type, representationType:r.representationType,
         dataPosse: r.dataPosse||null,
         consecutiveAlert: !!consec
@@ -2104,6 +2239,121 @@ function openImportMembersModal(unit){
     if(fail) msg += ' '+fail+' falharam.';
     if(consecCount) msg += ' '+consecCount+' com alerta de 2º mandato — confira na lista.';
     toast(msg, fail? 'err' : (consecCount? 'ok' : 'ok'));
+  });
+}
+
+/* ---------------- Exclusão de membros (com os treinamentos deles) ---------------- */
+async function deleteMembersCascade(ids){
+  const idSet = new Set(ids);
+  const trs = S.trainings.filter(t=>idSet.has(t.memberId));
+  for(const t of trs){
+    if(t.certificateAssetId && S.assets){ try{ await S.assets.delete(t.certificateAssetId); }catch(e){} }
+  }
+  await Promise.all(trs.map(t=>dbDelete('trainings', t.id)));
+  const results = await Promise.all(ids.map(id=>dbDelete('members', id)));
+  return results.filter(Boolean).length;
+}
+
+/* ---------------- Treinamentos em massa: importar planilha ---------------- */
+function openImportTrainingsModal(unit){
+  if(unitMembersAll(unit.id).length===0){ toast('Cadastre membros antes de importar treinamentos.', 'err'); return; }
+  let rows = null;
+  openModal('Importar treinamentos por planilha', `
+    <div class="field"><label>Arquivo (.csv) *</label><input type="file" id="trFile" accept=".csv,text/csv"></div>
+    <div class="hint">Use o modelo (botão "Baixar modelo" na tela de Treinamentos). Colunas: Matrícula, Nome completo, Curso, Carga horária, Data de conclusão e Validade (DD/MM/AAAA). Informe a matrícula ou o nome para localizar o membro. Linhas já cadastradas (mesmo membro, curso e data) são ignoradas.</div>
+    <div id="trPreview"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mImport" disabled>Importar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  const fileInput = document.getElementById('trFile'), box = document.getElementById('trPreview'), btn = document.getElementById('mImport');
+
+  fileInput.addEventListener('change', async ()=>{
+    const f = fileInput.files[0]; if(!f) return;
+    let text; try{ text = await f.text(); }catch(e){ toast('Não foi possível ler o arquivo.', 'err'); return; }
+    rows = parseCSVTrainings(text, unit.id);
+    if(!rows.length){
+      box.innerHTML = `<div class="alert-box warn"><span>${ico('alerta')}</span><div class="txt">Nenhuma linha de dados encontrada. Confira se é o modelo em CSV, com o cabeçalho na primeira linha.</div></div>`;
+      btn.disabled = true; return;
+    }
+    const valid = rows.filter(r=>!r.errors.length);
+    box.innerHTML = `<div class="hint" style="margin:8px 0;">${valid.length} válido(s) de ${rows.length} linha(s).</div>
+      <div style="max-height:240px; overflow-y:auto; border:1px solid var(--border); border-radius:8px;">
+        <table style="font-size:12px;"><thead><tr><th>Linha</th><th>Membro</th><th>Curso</th><th>Conclusão</th><th>Situação</th></tr></thead><tbody>
+        ${rows.map(r=>`<tr><td>${r.rowIndex}</td><td>${esc(r.memberName||'—')}</td><td>${esc(r.courseName||'—')}</td><td>${r.completionDate?fmtDate(r.completionDate):'—'}</td>
+          <td>${r.errors.length? `<span class="pill pill-danger">${esc(r.errors.join('; '))}</span>` : '<span class="pill pill-ok">ok</span>'}</td></tr>`).join('')}
+        </tbody></table></div>`;
+    btn.disabled = valid.length===0;
+    btn.textContent = valid.length ? 'Importar '+valid.length : 'Importar';
+  });
+
+  btn.addEventListener('click', async ()=>{
+    if(!rows) return;
+    const valid = rows.filter(r=>!r.errors.length);
+    btn.disabled = true; btn.textContent = 'Importando…';
+    let ok = 0, fail = 0;
+    for(const r of valid){
+      const id = await dbAdd('trainings', {memberId:r.member.id, courseName:r.courseName, hours:r.hours||null, completionDate:r.completionDate, expiryDate:r.expiryDate||null});
+      if(id) ok++; else fail++;
+    }
+    closeModal();
+    const skipped = rows.length - valid.length;
+    toast(ok+' treinamento(s) importado(s).'+(fail?' '+fail+' falharam.':'')+(skipped?' '+skipped+' linha(s) ignorada(s).':''), fail?'err':'ok');
+  });
+}
+
+/* ---------------- Treinamentos em massa: lançar para vários membros ---------------- */
+function openGroupTrainingModal(unit){
+  const mandates = unitMandates(unit.id);
+  if(!mandates.length){ toast('Cadastre um mandato e membros antes.', 'err'); return; }
+  let curId = (activeMandate(unit.id) || mandates[0]).id;
+  const listHtml = ()=>{
+    const ms = mandateMembers(curId);
+    return ms.length ? ms.map(m=>`<label style="display:flex;gap:8px;align-items:center;font-weight:400;color:var(--text);font-size:13px;"><input type="checkbox" data-gm="${m.id}" checked> ${esc(m.name)}<span class="faint">${m.matricula?' · '+esc(m.matricula):''}${m.setor?' · '+esc(m.setor):''}</span></label>`).join('') : '<div class="faint">Nenhum membro nesta gestão.</div>';
+  };
+  openModal('Lançar treinamento em grupo', `
+    <div class="field"><label>Gestão</label><select id="gMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===curId?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select></div>
+    <div class="field"><label>Membros</label>
+      <label style="display:flex;gap:8px;align-items:center;font-weight:600;font-size:13px;color:var(--text);"><input type="checkbox" id="gAll" checked> Selecionar todos</label>
+      <div id="gList" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;">${listHtml()}</div>
+    </div>
+    <div class="field"><label>Curso / treinamento *</label><input id="gCourse" placeholder="Ex: Curso básico de CIPA (NR-05)"></div>
+    <div class="field-row">
+      <div class="field"><label>Carga horária (h)</label><input type="number" id="gHours" min="0"></div>
+      <div class="field"><label>Conclusão *</label><input type="date" id="gDone"></div>
+    </div>
+    <div class="field"><label>Validade (opcional)</label><input type="date" id="gExpiry"></div>
+    <div class="hint">O certificado em arquivo não é anexado no lançamento em grupo. Membros que já têm este curso nesta data são ignorados.</div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Lançar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  const bindList = ()=>{
+    const all = document.getElementById('gAll');
+    all.checked = true;
+    all.onchange = ()=>document.querySelectorAll('[data-gm]').forEach(c=>{ c.checked = all.checked; });
+    document.querySelectorAll('[data-gm]').forEach(c=>c.addEventListener('change', ()=>{
+      all.checked = [...document.querySelectorAll('[data-gm]')].every(x=>x.checked);
+    }));
+  };
+  bindList();
+  document.getElementById('gMandate').addEventListener('change', e=>{
+    curId = e.target.value; document.getElementById('gList').innerHTML = listHtml(); bindList();
+  });
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const ids = [...document.querySelectorAll('[data-gm]')].filter(c=>c.checked).map(c=>c.dataset.gm);
+    const course = document.getElementById('gCourse').value.trim();
+    const done = document.getElementById('gDone').value;
+    const expiry = document.getElementById('gExpiry').value || null;
+    const hours = Number(document.getElementById('gHours').value) || null;
+    if(!ids.length){ toast('Selecione ao menos um membro.', 'err'); return; }
+    if(!course || !done){ toast('Informe o curso e a data de conclusão.', 'err'); return; }
+    if(expiry && expiry < done){ toast('A validade não pode ser anterior à conclusão.', 'err'); return; }
+    const btn = document.getElementById('mSave'); btn.disabled = true; btn.textContent = 'Lançando…';
+    let ok = 0, dup = 0, fail = 0;
+    for(const id of ids){
+      if(trainingDuplicate(id, course, done)){ dup++; continue; }
+      const nid = await dbAdd('trainings', {memberId:id, courseName:course, hours, completionDate:done, expiryDate:expiry});
+      if(nid) ok++; else fail++;
+    }
+    closeModal();
+    toast(ok+' treinamento(s) lançado(s).'+(dup?' '+dup+' já existia(m).':'')+(fail?' '+fail+' falharam.':''), fail?'err':'ok');
   });
 }
 

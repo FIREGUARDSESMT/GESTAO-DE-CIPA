@@ -215,7 +215,7 @@ function abrirForm(card) {
   $('fSave').onclick = async () => {
     const nome = $('fNome').value.trim(), desc = $('fDesc').value.trim(), url = $('fUrl').value.trim();
     if (!nome) { $('fErr').textContent = 'Informe o nome do sistema.'; return; }
-    if (url && !urlValida(url)) { $('fErr').textContent = 'Informe um link válido (começando com https:// ou um caminho como cipa/), ou deixe em branco.'; return; }
+    if (url && !urlValida(url)) { $('fErr').textContent = 'Informe um link válido (começando com https:// ou um caminho como cipa.html), ou deixe em branco.'; return; }
     const ic = document.querySelector('input[name="fIcone"]:checked');
     const co = document.querySelector('input[name="fCor"]:checked');
     const dados = { nome, desc, url, novaAba: $('fAba').checked, icone: ic ? ic.value : ICONE_PADRAO, cor: co ? co.value : COR_PADRAO };
