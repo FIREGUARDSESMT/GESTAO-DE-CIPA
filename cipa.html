@@ -183,6 +183,15 @@ tr:hover td{background:var(--surface-2);}
 .kpis{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:24px;}
 .kpi{padding:20px 24px;}
 .kpi + .kpi{border-left:1px solid var(--border);}
+button.kpi{background:none; border:0; border-radius:0; font:inherit; color:inherit; text-align:left; cursor:pointer;}
+button.kpi:hover{background:var(--surface-2);}
+button.kpi.on{background:var(--primary-soft); box-shadow:inset 0 -3px 0 var(--primary);}
+button.kpi:focus-visible{outline:2px solid var(--primary); outline-offset:-2px;}
+.kpi .sub{color:var(--text-muted); font-size:12.5px; margin-top:2px;}
+.kpis.k3{grid-template-columns:repeat(3,minmax(0,1fr)); margin-bottom:12px;}
+.kpis.k3 + .kpis.k3{margin-top:0;}
+.filtro-bar{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px;}
+.filtro-bar select{height:40px; padding:0 10px; border:1px solid #cbd2da; border-radius:8px; background:var(--surface); color:var(--text); font:inherit; min-width:240px;}
 .kpi .num{font-size:30px; font-weight:600; line-height:1.2;}
 .kpi .label{color:var(--text-muted);}
 .panel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:24px; overflow:hidden;}
@@ -224,11 +233,16 @@ tr:hover td{background:var(--surface-2);}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
   .kpi:nth-child(3){border-left:none;}
   .kpi:nth-child(n+3){border-top:1px solid var(--border);}
+  .kpis.k3{grid-template-columns:1fr;}
+  .kpis.k3 .kpi + .kpi{border-left:none; border-top:1px solid var(--border);}
   .lrow{grid-template-columns:1fr;}
   .topbar,.content{padding-left:16px; padding-right:16px;}
 }
 .auth-wrap{position:fixed; inset:0; z-index:300; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:16px;}
 .auth-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:28px; width:100%; max-width:380px;}
+.doc-group{margin-top:16px;}
+.doc-group:first-of-type{margin-top:4px;}
+.doc-group-t{font-weight:600;font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:8px;}
 @media print{
   .sidebar, .tabs, #btnEditUnit, .no-print{display:none !important;}
   .app{display:block;}
@@ -290,6 +304,9 @@ const S = {
   _dimBuffer: null,
   _expandedMandates: {},
   _selMembers: {},
+  subtitulos: null,
+  _painelUnit: 'all',
+  _painelFiltro: 'all',
   _relatorioTipo: 'geral',
   _relatorioUnitId: null,
   unsub: [],
@@ -719,6 +736,11 @@ function subscribeAll(){
     err => { console.error('dimensionamento', err); }
   );
   S.unsub.push(unsubDim);
+  const unsubSub = S.db.doc('config/subtitulos').onSnapshot(
+    snap => { S.subtitulos = snap.exists ? snap.data() : null; renderMain(); },
+    err => { console.error('subtitulos', err); }
+  );
+  S.unsub.push(unsubSub);
 }
 
 /* ---------------- writes ---------------- */
@@ -928,26 +950,70 @@ function trainingExpiryAlert(t){
   return null;
 }
 
+function latestTrainings(list){
+  const map = {};
+  list.forEach(t=>{
+    const k = t.memberId+'|'+normStr(t.courseName);
+    if(!map[k] || (t.completionDate||'') > (map[k].completionDate||'')) map[k] = t;
+  });
+  return Object.values(map);
+}
+
+function unitAtasPendentes(unit, am){
+  if(!am || !am.startDate || !am.endDate || am.startDate >= am.endDate) return 0;
+  const keys = new Set(mandateAtas(unit.id, am.id).map(a=>(a.reuniaoData||'').slice(0,7)));
+  const cur = todayISO().slice(0,7);
+  return monthsOfMandate(am).filter(x=>x.key < cur && !keys.has(x.key)).length;
+}
+
+function unitMetrics(unit){
+  const am = activeMandate(unit.id);
+  const members = am ? mandateMembers(am.id) : [];
+  const ra = am ? mandateRenewalAlert(am) : null;
+  const inRenewal = !!(am && am.renewal && am.renewal.stages && am.renewal.stages.length && am.renewal.status!=='concluido');
+  const atasPend = unitAtasPendentes(unit, am);
+  const ids = new Set(members.map(m=>m.id));
+  const trs = latestTrainings(S.trainings.filter(t=>ids.has(t.memberId)));
+  const hoje = todayISO();
+  const vencidos = trs.filter(t=>t.expiryDate && t.expiryDate < hoje).length;
+  const aVencer = trs.filter(t=>{ if(!t.expiryDate || t.expiryDate < hoje) return false; return daysBetween(hoje, t.expiryDate) <= 45; }).length;
+  const comTreino = new Set(S.trainings.filter(t=>ids.has(t.memberId)).map(t=>t.memberId));
+  const semTreino = members.filter(m=>!comTreino.has(m.id)).length;
+  const motivos = [];
+  if(!am) motivos.push('Sem mandato');
+  else if(ra && ra.level==='danger') motivos.push(ra.label);
+  if(atasPend>0) motivos.push('Atas pendentes');
+  if(vencidos>0) motivos.push('Certificado vencido');
+  const estado = motivos.length ? 'irregular' : (inRenewal ? 'renovacao' : 'regular');
+  return {unit, am, members, eleitos: members.filter(m=>m.type==='Eleito').length, indicados: members.filter(m=>m.type==='Indicado').length,
+          inRenewal, atasPend, vencidos, aVencer, semTreino, motivos, estado};
+}
+
 function computeAllAlerts(){
   const alerts = [];
+  const currentIds = new Set();
   S.units.forEach(u=>{
     const curM = activeMandate(u.id);
+    if(curM) mandateMembers(curM.id).forEach(mem=>currentIds.add(mem.id));
     unitMandates(u.id).forEach(m=>{
       if(!curM || m.id!==curM.id) return; // gestões antigas não geram alertas
       const ra = mandateRenewalAlert(m);
       if(ra) alerts.push({...ra, unit:u, mandate:m, type:'renewal'});
       mandateMembers(m.id).forEach(mem=>{
         if(mem.consecutiveAlert){
-          alerts.push({level:'warn', text:'2º mandato consecutivo possível: '+mem.name+' (verificar elegibilidade conforme NR-05).', unit:u, mandate:m, member:mem, type:'consecutive'});
+          alerts.push({level:'warn', text:'2º mandato consecutivo possível: '+esc(mem.name)+' (verificar elegibilidade conforme NR-05).', unit:u, mandate:m, member:mem, type:'consecutive'});
         }
       });
     });
+    const n = unitAtasPendentes(u, curM);
+    if(n>0) alerts.push({level:'danger', label:'Ata pendente', text:n+' mês(es) da gestão atual sem ata registrada.', unit:u, mandate:curM, type:'ata'});
   });
-  S.trainings.forEach(t=>{
+  latestTrainings(S.trainings).forEach(t=>{
+    if(!currentIds.has(t.memberId)) return; // só membros da gestão atual
     const ta = trainingExpiryAlert(t);
     if(ta){
       const mem = byId(S.members, t.memberId);
-      alerts.push({...ta, member:mem, unit: mem ? byId(S.units, mem.unitId) : null, training:t, type:'training'});
+      alerts.push({...ta, text: esc(mem?mem.name:'Membro')+' · '+esc(t.courseName)+': '+ta.text, member:mem, unit: mem ? byId(S.units, mem.unitId) : null, training:t, type:'training'});
     }
   });
   return alerts;
@@ -1116,10 +1182,15 @@ function attentionRowHtml(a){
     title = esc(a.member.name)+' · matrícula '+esc(a.member.matricula||'—');
     subtitle = unitName+' · esteve na gestão anterior, confira a elegibilidade';
     action = `<button class="btn" data-open-unit-tab="${a.unit.id}|membros">Ver membro</button>`;
+  } else if(a.type==='ata'){
+    label = 'Ata pendente';
+    title = a.text;
+    subtitle = unitName;
+    action = `<button class="btn" data-open-unit-tab="${a.unit.id}|atas">Ver atas</button>`;
   } else {
     label = 'Certificado';
-    title = esc(a.training.courseName)+': '+a.text;
-    subtitle = unitName + (a.member ? ' · '+esc(a.member.name) : '');
+    title = a.text;
+    subtitle = unitName;
     action = a.unit ? `<button class="btn" data-open-unit-tab="${a.unit.id}|treinamentos">Ver treinamentos</button>` : '';
   }
   return `<div class="lrow">
@@ -1129,53 +1200,107 @@ function attentionRowHtml(a){
   </div>`;
 }
 
+function estadoPill(x){
+  if(x.estado==='irregular') return '<span class="pill pill-danger">Irregular</span>';
+  if(x.estado==='renovacao') return '<span class="pill pill-info">Em renovação</span>';
+  return '<span class="pill pill-ok">Regular</span>';
+}
+const PAINEL_FILTROS = {
+  all: ()=>true,
+  regular: x=>x.estado==='regular',
+  renovacao: x=>x.estado==='renovacao',
+  irregular: x=>x.estado==='irregular',
+  atas: x=>x.atasPend>0,
+  cert: x=>x.vencidos>0
+};
+const PAINEL_FILTRO_NOMES = {regular:'Regulares', renovacao:'Em renovação', irregular:'Irregulares', atas:'Com atas pendentes', cert:'Com certificados vencidos'};
+
 function renderGlobalDashboard(){
   if(S.units.length===0){
     return `<div class="empty"><div class="big">${ico('predio','style="width:32px;height:32px"')}</div>Nenhuma unidade cadastrada ainda.<br><br><button class="btn btn-primary" id="btnAddUnitEmpty">${ico('plus')}Cadastrar primeira unidade</button></div>`;
   }
-  const alerts = computeAllAlerts().slice().sort((a,b)=>(a.level==='danger'?0:1)-(b.level==='danger'?0:1));
-  const currentMembers = S.units.reduce((n,u)=>{ const am = activeMandate(u.id); return n + (am ? mandateMembers(am.id).length : 0); }, 0);
-  const processes = allRenewalProcesses().filter(p=>renewalStatusInfo(p.mandate.renewal).level!=='ok').length;
+  if(S._painelUnit!=='all' && !byId(S.units, S._painelUnit)) S._painelUnit = 'all';
+  const unitsSorted = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const todas = unitsSorted.map(unitMetrics);
+  const escopo = S._painelUnit==='all' ? todas : todas.filter(x=>x.unit.id===S._painelUnit);
+  const filtro = PAINEL_FILTROS[S._painelFiltro] ? S._painelFiltro : 'all';
+  const visiveis = escopo.filter(PAINEL_FILTROS[filtro]);
 
+  const cnt = f => escopo.filter(PAINEL_FILTROS[f]).length;
+  const soma = k => escopo.reduce((n,x)=>n+x[k],0);
+  const cipeiros = escopo.reduce((n,x)=>n+x.members.length,0);
+  const eleitos = soma('eleitos'), indicados = soma('indicados');
+  const atasPend = soma('atasPend'), unAtas = cnt('atas');
+  const vencidos = soma('vencidos'), aVencer = soma('aVencer'), semTreino = soma('semTreino');
+
+  const kpi = (f, num, label, sub, cor)=>{
+    const on = filtro===f;
+    return `<button class="kpi${on?' on':''}" data-filtro="${f}" aria-pressed="${on}"><div class="num" style="color:${cor}">${num}</div><div class="label">${label}</div>${sub?`<div class="sub">${sub}</div>`:''}</button>`;
+  };
+  const nUn = escopo.length;
+  const alerts = computeAllAlerts().filter(a=>a.unit && (S._painelUnit==='all' || a.unit.id===S._painelUnit))
+    .sort((a,b)=>(a.level==='danger'?0:1)-(b.level==='danger'?0:1));
   const attention = alerts.length
     ? alerts.slice(0,8).map(attentionRowHtml).join('') + (alerts.length>8 ? `<div class="lrow"><span></span><div class="s">+ ${alerts.length-8} outro(s) — abra a unidade para ver todos</div><span></span></div>` : '')
-    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo nas unidades.</div><span></span></div>`;
+    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${S._painelUnit==='all'?' nas unidades':' nesta unidade'}.</div><span></span></div>`;
 
-  const unitsRows = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(u=>{
-    const am = activeMandate(u.id);
-    const nMembers = am ? mandateMembers(am.id).length : 0;
-    const tech = unitTechnicians(u.id)[0];
+  const linhas = visiveis.map(x=>{
+    const u = x.unit, am = x.am;
+    const atasCel = !am ? '<span class="faint">—</span>' : (x.atasPend ? `<span class="pill pill-danger">${x.atasPend} pendente(s)</span>` : '<span class="pill pill-ok">Em dia</span>');
+    const trCel = (x.vencidos ? `<span class="pill pill-danger">${x.vencidos} vencido(s)</span>` : (x.aVencer ? `<span class="pill pill-warn">${x.aVencer} a vencer</span>` : '<span class="pill pill-ok">Em dia</span>'))
+      + (x.semTreino ? `<div class="faint" style="margin-top:2px;">${x.semTreino} sem treinamento</div>` : '');
     return `<tr>
       <td><b>${esc(u.name)}</b></td>
+      <td>${estadoPill(x)}${x.motivos.length?`<div class="faint" style="margin-top:2px;">${esc(x.motivos.join(' · '))}</div>`:''}</td>
       <td>${am ? fmtDate(am.startDate)+' – '+fmtDate(am.endDate) : '<span class="faint">sem mandato</span>'}</td>
-      <td>${nMembers}</td>
-      <td>${tech ? esc(tech.name) : '<span class="faint">não definido</span>'}</td>
-      <td>${unitStatusPill(u.id)}</td>
+      <td>${x.members.length}<div class="faint">${x.eleitos} eleitos · ${x.indicados} indicados</div></td>
+      <td>${atasCel}</td>
+      <td>${trCel}</td>
       <td><button class="btn btn-sm" data-open-unit="${u.id}">Abrir</button></td>
     </tr>`;
   }).join('');
 
   return `
-  <div class="kpis">
-    <div class="kpi"><div class="num">${S.units.length}</div><div class="label">Unidades</div></div>
-    <div class="kpi"><div class="num">${currentMembers}</div><div class="label">Membros no mandato atual</div></div>
-    <div class="kpi"><div class="num">${processes}</div><div class="label">Renovações em andamento</div></div>
-    <div class="kpi"><div class="num" style="color:${alerts.length?'var(--danger)':'var(--ok)'}">${alerts.length}</div><div class="label">Alertas ativos</div></div>
+  <div class="filtro-bar">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label for="fPainelUnit" style="font-weight:600;font-size:13px;">Visualizar</label>
+      <select id="fPainelUnit"><option value="all">Todas as unidades (geral)</option>${unitsSorted.map(u=>`<option value="${u.id}" ${u.id===S._painelUnit?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+    </div>
+    ${filtro!=='all' ? `<div style="display:flex;align-items:center;gap:10px;"><span class="pill pill-info">Filtro: ${PAINEL_FILTRO_NOMES[filtro]}</span><button class="btn" id="btnLimparFiltro">Limpar filtro</button></div>` : ''}
   </div>
-  <div class="panel">
+  <div class="kpis k3">
+    ${kpi('regular', cnt('regular'), 'Regulares', 'de '+nUn+' unidade(s)', 'var(--ok)')}
+    ${kpi('renovacao', cnt('renovacao'), 'Em renovação', 'processo eleitoral em andamento', 'var(--primary)')}
+    ${kpi('irregular', cnt('irregular'), 'Irregulares', 'mandato, ata ou certificado em atraso', cnt('irregular')?'var(--danger)':'var(--text)')}
+  </div>
+  <div class="hint" style="margin:0 0 12px;">Irregular: mandato vencido ou sem renovação no prazo, ata pendente ou certificado vencido. Em renovação: processo eleitoral em andamento e sem irregularidade. Regular: as demais.</div>
+  <div class="kpis k3">
+    <div class="kpi"><div class="num">${cipeiros}</div><div class="label">Cipeiros no mandato atual</div><div class="sub">${eleitos} eleitos · ${indicados} indicados</div></div>
+    ${kpi('atas', atasPend, 'Atas pendentes', 'meses sem ata, em '+unAtas+' unidade(s)', atasPend?'var(--danger)':'var(--text)')}
+    ${kpi('cert', vencidos, 'Certificados vencidos', aVencer+' a vencer em 45 dias · '+semTreino+' membro(s) sem treinamento', vencidos?'var(--danger)':'var(--text)')}
+  </div>
+  <div class="panel" style="margin-top:12px;">
     <div class="panel-head">Precisa de atenção</div>
     ${attention}
   </div>
   <div class="panel">
-    <div class="panel-head">Unidades</div>
-    <table><thead><tr><th>Unidade</th><th>Mandato atual</th><th>Membros</th><th>Técnico responsável</th><th>Situação</th><th></th></tr></thead>
-    <tbody>${unitsRows}</tbody></table>
+    <div class="panel-head">Unidades <span class="muted" style="font-weight:400;font-size:13px;">mostrando ${visiveis.length} de ${escopo.length}</span></div>
+    <table><thead><tr><th>Unidade</th><th>Situação</th><th>Mandato atual</th><th>Cipeiros</th><th>Atas</th><th>Treinamentos</th><th></th></tr></thead>
+    <tbody>${linhas || '<tr><td colspan="7" class="faint" style="padding:16px;">Nenhuma unidade neste filtro.</td></tr>'}</tbody></table>
   </div>`;
 }
 function bindGlobalDashboard(){
   document.querySelectorAll('[data-open-unit]').forEach(b=>b.addEventListener('click', ()=>goUnitTab(b.dataset.openUnit+'|visao')));
   document.querySelectorAll('[data-open-unit-tab]').forEach(b=>b.addEventListener('click', ()=>goUnitTab(b.dataset.openUnitTab)));
   document.querySelectorAll('[data-renewal-action]').forEach(b=>b.addEventListener('click', ()=>handleRenewalAction(b.dataset.renewalAction)));
+  document.querySelectorAll('[data-filtro]').forEach(b=>b.addEventListener('click', ()=>{
+    S._painelFiltro = (S._painelFiltro===b.dataset.filtro) ? 'all' : b.dataset.filtro;
+    renderMain();
+  }));
+  const sel = document.getElementById('fPainelUnit');
+  if(sel) sel.addEventListener('change', ()=>{ S._painelUnit = sel.value; renderMain(); });
+  const lim = document.getElementById('btnLimparFiltro');
+  if(lim) lim.addEventListener('click', ()=>{ S._painelFiltro = 'all'; renderMain(); });
   const btn = document.getElementById('btnAddUnitEmpty');
   if(btn) btn.addEventListener('click', ()=>openUnitModal());
 }
@@ -1719,6 +1844,24 @@ function renderMembros(unit){
 }
 
 /* ---------------- Documentos (por gestão) ---------------- */
+const SUBTITULOS_PADRAO = [
+  'Edital de abertura do processo eleitoral - SINDICATO',
+  'Edital de abertura do processo eleitoral da CIPA',
+  'Comissão Eleitoral',
+  'Convocação para Eleição',
+  'Ata de eleição e apuração dos votos',
+  'Modelo E-mail Indicação empregador',
+  'Ata Instalação e Posse',
+  'Calendário de Reuniões',
+  'Ata Reunião Ordinária'
+];
+function effectiveSubtitulos(){
+  return (S.subtitulos && Array.isArray(S.subtitulos.lista) && S.subtitulos.lista.length) ? S.subtitulos.lista : SUBTITULOS_PADRAO;
+}
+function docTitleOrder(m){
+  const base = (m && m.renewal && m.renewal.stages && m.renewal.stages.length) ? m.renewal.stages.map(x=>x.label).concat(DOC_FIXED_CATEGORIES) : DOC_CATEGORIES_NO_CRONOGRAMA;
+  return base.concat(['Outros documentos']);
+}
 const DOC_FIXED_CATEGORIES = ['Ata de reunião','Comunicação MTE/eSocial','Plano de trabalho','Calendário anual'];
 const DOC_CATEGORIES_NO_CRONOGRAMA = ['Edital de convocação','Ata de eleição','Termo de posse','Ata de reunião','Comunicação MTE/eSocial','Plano de trabalho','Calendário anual'];
 
@@ -1728,34 +1871,54 @@ function renderDocumentos(unit){
     return `<div class="empty"><div class="big">${ico('doc','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de enviar documentos.</div>`;
   }
   const defaultMandate = activeMandate(unit.id) || mandates[0];
-  return `
-  <div class="row" style="margin-bottom:12px;">
-    <div class="row-title">Documentos — por gestão</div>
-    <button class="btn btn-primary" id="btnNewDoc" data-mandate="${defaultMandate.id}">${ico('upload')}Enviar documento</button>
-  </div>
-  ${mandates.map(m=>{
-    const docs = unitDocuments(unit.id, m.id).sort((a,b)=>(b.uploadedAt||'').localeCompare(a.uploadedAt||''));
-    const isCurrent = defaultMandate.id===m.id;
-    return `<div class="card">
-      <div class="row" style="margin-bottom:8px;">
-        <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)} ${isCurrent?'<span class="pill pill-ok" style="margin-left:6px;">gestão atual</span>':''}</div>
-        <button class="btn btn-sm" data-add-doc-mandate="${m.id}">+ Adicionar aqui</button>
-      </div>
-      ${docs.length===0 ? `<div class="faint" style="padding:6px 0;">Nenhum documento nesta gestão.</div>` :
-      docs.map(d=>{
-        const metaPrefix = (d.category && d.category!==d.name) ? esc(d.category)+' · ' : '';
-        return `<div class="doc-item">
+  const subOrder = effectiveSubtitulos();
+  const docLine = (d, grupo)=>{
+    const principal = d.subtitulo || (d.name!==grupo ? d.name : (d.arquivo || 'Documento'));
+    const arquivoNaMeta = d.arquivo && principal!==d.arquivo;
+    const meta = [arquivoNaMeta ? esc(d.arquivo) : null, 'enviado em '+fmtDate((d.uploadedAt||'').slice(0,10))].filter(Boolean).join(' · ');
+    return `<div class="doc-item">
         <div class="doc-icon">${ico('doc')}</div>
         <div class="doc-info">
-          <div class="name">${esc(d.name)}</div>
-          <div class="meta">${metaPrefix}enviado em ${fmtDate((d.uploadedAt||'').slice(0,10))}</div>
+          <div class="name">${esc(principal)}</div>
+          <div class="meta">${meta}</div>
         </div>
         <div class="top-actions">
-          <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}">Abrir</button>
+          <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.subtitulo||d.name)}">Abrir</button>
           <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
         </div>
       </div>`;
-      }).join('')}
+  };
+  return `
+  <div class="row" style="margin-bottom:12px;">
+    <div class="sect-title" style="margin:0;">Documentos — por gestão</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn" id="btnSubtitulos">${ico('editar')}Gerenciar subtítulos</button>
+      <button class="btn btn-primary" id="btnNewDoc" data-mandate="${defaultMandate.id}">${ico('upload')}Enviar documento</button>
+    </div>
+  </div>
+  ${mandates.map(m=>{
+    const docs = unitDocuments(unit.id, m.id);
+    const isCurrent = defaultMandate.id===m.id;
+    const order = docTitleOrder(m);
+    const groups = {};
+    docs.forEach(d=>{ const g = d.category || d.name || 'Sem título'; (groups[g] = groups[g] || []).push(d); });
+    const keys = Object.keys(groups).sort((x,y)=>{
+      const ix = order.indexOf(x), iy = order.indexOf(y);
+      return (ix<0?999:ix) - (iy<0?999:iy) || x.localeCompare(y);
+    });
+    const body = keys.map(g=>{
+      const list = groups[g].sort((x,y)=>{
+        const sx = subOrder.indexOf(x.subtitulo||''), sy = subOrder.indexOf(y.subtitulo||'');
+        return (sx<0?999:sx) - (sy<0?999:sy) || (x.reuniaoData||x.uploadedAt||'').localeCompare(y.reuniaoData||y.uploadedAt||'');
+      });
+      return `<div class="doc-group"><div class="doc-group-t">${esc(g)} <span class="faint" style="font-weight:400;">(${list.length})</span></div>${list.map(d=>docLine(d, g)).join('')}</div>`;
+    }).join('');
+    return `<div class="card">
+      <div class="row" style="margin-bottom:8px;">
+        <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)} ${isCurrent?'<span class="pill pill-ok" style="margin-left:6px;">gestão atual</span>':''}</div>
+        <button class="btn btn-sm" data-add-doc-mandate="${m.id}">${ico('plus')}Adicionar aqui</button>
+      </div>
+      ${docs.length===0 ? `<div class="faint" style="padding:6px 0;">Nenhum documento nesta gestão.</div>` : body}
     </div>`;
   }).join('')}`;
 }
@@ -1886,9 +2049,11 @@ function renderAlertasTab(unit){
   const renewal = alerts.filter(a=>a.type==='renewal');
   const consec = alerts.filter(a=>a.type==='consecutive');
   const train = alerts.filter(a=>a.type==='training');
+  const atasA = alerts.filter(a=>a.type==='ata');
   let html='';
   if(renewal.length) html += `<div class="card"><h3>Renovação de mandato (NR-05)</h3>${renewal.map(alertBoxHtml).join('')}</div>`;
   if(consec.length) html += `<div class="card"><h3>Possível 2º mandato consecutivo</h3>${consec.map(alertBoxHtml).join('')}</div>`;
+  if(atasA.length) html += `<div class="card"><h3>Atas de reunião</h3>${atasA.map(alertBoxHtml).join('')}</div>`;
   if(train.length) html += `<div class="card"><h3>Certificados / treinamentos</h3>${train.map(alertBoxHtml).join('')}</div>`;
   return html;
 }
@@ -1941,6 +2106,7 @@ function bindTabEvents(unit){
     toast(n+' membro(s) excluído(s).', 'ok');
     renderMain();
   });
+  b('#btnSubtitulos', ()=>openSubtitulosModal());
   b('#btnNewAta', el=>openAtaModal(unit, el.dataset.mandate));
   b('[data-add-ata]', el=>openAtaModal(unit, el.dataset.mandate, el.dataset.month));
   b('[data-toggle-ata]', el=>{
@@ -2493,6 +2659,23 @@ function openAtaModal(unit, presetMandateId, presetMonth){
   });
 }
 
+/* ---------------- Subtítulos dos documentos (lista editável) ---------------- */
+function openSubtitulosModal(){
+  openModal('Gerenciar subtítulos', `
+    <div class="hint">Um subtítulo por linha, na ordem em que devem aparecer. Alterar a lista não muda os documentos já enviados.</div>
+    <div class="field"><label for="subLista">Subtítulos</label><textarea id="subLista" rows="12" style="font-family:inherit;">${esc(effectiveSubtitulos().join('\n'))}</textarea></div>
+  `, `<button class="btn" id="subReset" style="margin-right:auto;">Restaurar padrão</button><button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.getElementById('subReset').addEventListener('click', ()=>{ document.getElementById('subLista').value = SUBTITULOS_PADRAO.join('\n'); });
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const seen = new Set();
+    const lista = document.getElementById('subLista').value.split('\n').map(x=>x.trim()).filter(x=>{ if(!x || seen.has(x.toLowerCase())) return false; seen.add(x.toLowerCase()); return true; });
+    if(!lista.length){ toast('Informe ao menos um subtítulo.', 'err'); return; }
+    const ok = await dbSet('config', 'subtitulos', {lista});
+    if(ok){ closeModal(); toast('Lista de subtítulos salva.', 'ok'); }
+  });
+}
+
 /* ---------------- Document modal (upload) ---------------- */
 function openDocModal(unit, presetMandateId){
   const mandates = unitMandates(unit.id);
@@ -2522,10 +2705,20 @@ function openDocModal(unit, presetMandateId){
       <label>Novo título *</label>
       <input id="fDocCustomName" placeholder="Digite o título do documento">
     </div>
+    <div class="field"><label>Subtítulo (opcional)</label>
+      <select id="fDocSub"><option value="">— sem subtítulo —</option>${effectiveSubtitulos().map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}<option value="__outro__">Outro (digitar)</option></select>
+      <div class="hint">Tipo do documento dentro do título. A lista pode ser editada em "Gerenciar subtítulos".</div>
+    </div>
+    <div class="field" id="fDocSubWrap" style="display:none;">
+      <label>Novo subtítulo *</label>
+      <input id="fDocSubCustom" placeholder="Digite o subtítulo">
+    </div>
     <div class="field"><label>Arquivo * (até 5 MB)</label><input type="file" id="fDocFile"></div>
   `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Enviar</button>`);
 
   document.getElementById('mCancel').addEventListener('click', closeModal);
+  const subSel = document.getElementById('fDocSub');
+  subSel.addEventListener('change', ()=>{ document.getElementById('fDocSubWrap').style.display = subSel.value==='__outro__' ? '' : 'none'; });
 
   const mandateSel = document.getElementById('fDocMandate');
   const titleSel = document.getElementById('fDocTitle');
@@ -2549,6 +2742,8 @@ function openDocModal(unit, presetMandateId){
     const fileInput = document.getElementById('fDocFile');
     const file = fileInput.files[0];
     if(!name || !file){ toast('Informe o título e selecione um arquivo.', 'err'); return; }
+    let sub = subSel.value;
+    if(sub==='__outro__'){ sub = document.getElementById('fDocSubCustom').value.trim(); if(!sub){ toast('Digite o subtítulo ou escolha outro da lista.', 'err'); return; } }
     const saveBtn = document.getElementById('mSave');
     saveBtn.disabled = true; saveBtn.textContent = 'Enviando…';
     try{
@@ -2556,7 +2751,8 @@ function openDocModal(unit, presetMandateId){
       await dbAdd('documents', {
         unitId: unit.id, mandateId: mandateSel.value,
         category: isCustom ? 'Outros documentos' : name,
-        name, assetId: res.id, url: res.url, contentType: res.contentType, sizeBytes: res.sizeBytes,
+        name, subtitulo: sub || null, arquivo: file.name,
+        assetId: res.id, url: res.url||'', contentType: res.contentType, sizeBytes: res.sizeBytes,
         uploadedAt: new Date().toISOString()
       });
       closeModal(); toast('Documento enviado.', 'ok');
