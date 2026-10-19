@@ -243,6 +243,9 @@ button.kpi:focus-visible{outline:2px solid var(--primary); outline-offset:-2px;}
 .doc-group{margin-top:16px;}
 .doc-group:first-of-type{margin-top:4px;}
 .doc-group-t{font-weight:600;font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:8px;}
+.linkbox{margin-top:12px; padding:14px 16px; border:1px dashed var(--border); border-radius:10px;}
+.linkrow{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.linkrow input{flex:1 1 260px; min-width:0; height:40px; padding:0 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-size:13px;}
 @media print{
   .sidebar, .tabs, #btnEditUnit, .no-print{display:none !important;}
   .app{display:block;}
@@ -305,6 +308,7 @@ const S = {
   _expandedMandates: {},
   _selMembers: {},
   subtitulos: null,
+  links: [], linkDocs: [], _linkAtas: {}, _linkSubs: {},
   _painelUnit: 'all',
   _painelFiltro: 'all',
   _relatorioTipo: 'geral',
@@ -564,18 +568,24 @@ function buildAdapters(app){
       delete: ()=>FS.deleteDoc(ref)
     };}
   };
+  S.db.sub = (col, id, sub) => { const ref = FS.collection(fdb, COL_PREFIX+col, id, sub); return {
+    onSnapshot: (next, err)=>FS.onSnapshot(ref, next, err)
+  };};
+  S.db.subDoc = (col, id, sub, docId) => { const ref = FS.doc(fdb, COL_PREFIX+col, id, sub, docId); return {
+    delete: ()=>FS.deleteDoc(ref)
+  };};
   // Arquivos: guardados no próprio Firestore em base64, divididos em pedaços (sem Storage, sem plano Blaze).
   const CHUNK = 700000;                 // caracteres base64 por pedaço (~700 KB), abaixo do limite de 1 MiB por documento
   const MAX_BYTES = 5 * 1024 * 1024;    // tamanho máximo por arquivo
-  const arqCol = () => FS.collection(fdb, COL_PREFIX+'arquivos');
+  const arqCol = token => token ? FS.collection(fdb, COL_PREFIX+'links', token, 'arquivos') : FS.collection(fdb, COL_PREFIX+'arquivos');
   const fileToBase64 = file => new Promise((resolve, reject)=>{
     const r = new FileReader();
     r.onload = ()=>resolve(String(r.result).split(',')[1] || '');
     r.onerror = ()=>reject(new Error('Não foi possível ler o arquivo.'));
     r.readAsDataURL(file);
   });
-  async function chunksOf(id){
-    const snap = await FS.getDocs(FS.query(arqCol(), FS.where('fileId','==',id)));
+  async function chunksOf(id, token){
+    const snap = await FS.getDocs(FS.query(arqCol(token), FS.where('fileId','==',id)));
     return snap.docs.map(d=>d.data()).sort((x,y)=>x.idx-y.idx);
   }
   S.assets = {
@@ -594,12 +604,12 @@ function buildAdapters(app){
       }catch(e){ try{ await S.assets.delete(id); }catch(_){} throw e; }
       return {id, url:'', contentType:type, sizeBytes:file.size};
     },
-    async delete(id){
-      const snap = await FS.getDocs(FS.query(arqCol(), FS.where('fileId','==',id)));
+    async delete(id, token){
+      const snap = await FS.getDocs(FS.query(arqCol(token), FS.where('fileId','==',id)));
       await Promise.all(snap.docs.map(d=>FS.deleteDoc(d.ref)));
     },
-    async open(id, name){
-      const parts = await chunksOf(id);
+    async open(id, name, token){
+      const parts = await chunksOf(id, token);
       if(!parts.length) throw new Error('Arquivo não encontrado.');
       const bin = atob(parts.map(p=>p.data).join(''));
       const bytes = new Uint8Array(bin.length);
@@ -656,10 +666,10 @@ function showNoAccess(user){
   document.getElementById('btnLogoutNoAccess').addEventListener('click', ()=>AU.signOut(S.auth));
 }
 
-async function openStoredFile(id, name){
+async function openStoredFile(id, name, token){
   const win = window.open('about:blank', '_blank');
   try{
-    const f = await S.assets.open(id, name);
+    const f = await S.assets.open(id, name, token || undefined);
     const url = URL.createObjectURL(f.blob);
     if(win){ win.location.href = url; }
     else { const a = document.createElement('a'); a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }
@@ -670,9 +680,81 @@ async function openStoredFile(id, name){
   }
 }
 
+/* ---------------- Link para envio de atas (sem login) ---------------- */
+function syncLinkSubs(){
+  const tokens = new Set(S.links.map(l=>l.id));
+  Object.keys(S._linkSubs).forEach(t=>{
+    if(!tokens.has(t)){ try{ S._linkSubs[t](); }catch(e){} delete S._linkSubs[t]; delete S._linkAtas[t]; }
+  });
+  S.links.forEach(l=>{
+    if(S._linkSubs[l.id]) return;
+    const unsub = S.db.sub('links', l.id, 'atas').onSnapshot(
+      snap => { S._linkAtas[l.id] = snap.docs.map(d=>({id:d.id, ...d.data()})); rebuildLinkDocs(); renderMain(); },
+      err => { console.error('atas do link', err); }
+    );
+    S._linkSubs[l.id] = unsub;
+    S.unsub.push(unsub);
+  });
+  rebuildLinkDocs();
+}
+function rebuildLinkDocs(){
+  const out = [];
+  S.links.forEach(l=>{
+    (S._linkAtas[l.id] || []).forEach(a=>{
+      out.push({
+        id:'L'+l.id+'_'+a.id, rawId:a.id, fromLink:l.id, unitId:l.unitId, mandateId:l.mandateId,
+        kind:'ata', category:'Ata de reunião', name:a.nome || ('Ata '+(a.reuniaoTipo||'').toLowerCase()),
+        reuniaoTipo:a.reuniaoTipo, reuniaoData:a.reuniaoData, pauta:a.pauta||'', enviadoPor:a.enviadoPor||'',
+        arquivo:a.arquivo, assetId:a.assetId, uploadedAt:a.uploadedAt, subtitulo:null
+      });
+    });
+  });
+  S.linkDocs = out;
+}
+function randomToken(){
+  const c = window.crypto;
+  if(!c || !c.getRandomValues) throw new Error('Navegador sem suporte para gerar o link com segurança.');
+  const a = new Uint8Array(24); c.getRandomValues(a);
+  return btoa(String.fromCharCode.apply(null, a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function linkUrl(token){ return new URL('ata.html?t='+encodeURIComponent(token), location.href).href; }
+async function generateLink(unit, mandate){
+  for(const l of S.links.filter(x=>x.mandateId===mandate.id && x.ativo)){
+    await dbUpdate('links', l.id, {ativo:false});
+  }
+  const token = randomToken();
+  const ok = await dbSet('links', token, {unitId:unit.id, unitName:unit.name, mandateId:mandate.id, inicio:mandate.startDate, fim:mandate.endDate, ativo:true, criadoEm:new Date().toISOString()});
+  return ok ? token : null;
+}
+async function deactivateLinks(mandateId){
+  for(const l of S.links.filter(x=>x.mandateId===mandateId && x.ativo)) await dbUpdate('links', l.id, {ativo:false});
+}
+function copyLink(token){
+  const url = linkUrl(token);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>toast('Link copiado.', 'ok')).catch(()=>window.prompt('Copie o link:', url));
+  } else window.prompt('Copie o link:', url);
+}
+function linkBoxHtml(m){
+  if(!m || m.status!=='ativo') return '';
+  const ativo = S.links.find(l=>l.mandateId===m.id && l.ativo);
+  const antigos = S.links.filter(l=>l.mandateId===m.id && !l.ativo).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  const nota = '<div class="muted" style="font-size:13px;margin:2px 0 10px;">Quem tiver este link envia e consulta as atas desta gestão, sem login. Compartilhe só com a CIPA.</div>';
+  let corpo;
+  if(ativo){
+    corpo = `${nota}<div class="linkrow"><input readonly value="${esc(linkUrl(ativo.id))}" aria-label="Link para envio de atas"><button class="btn" data-copy-link="${ativo.id}">Copiar</button><button class="btn" data-toggle-link="${ativo.id}|0">Desativar</button><button class="btn" data-gen-link="${m.id}">Gerar novo link</button></div>`;
+  } else if(antigos.length){
+    corpo = `<div class="muted" style="font-size:13px;margin:2px 0 10px;">O link está desativado: ninguém consegue enviar nem consultar atas por ele.</div><div class="linkrow"><button class="btn" data-toggle-link="${antigos[0].id}|1">Reativar o último link</button><button class="btn btn-primary" data-gen-link="${m.id}">Gerar novo link</button></div>`;
+  } else {
+    corpo = `${nota}<div class="linkrow"><button class="btn btn-primary" data-gen-link="${m.id}">Gerar link</button></div>`;
+  }
+  return `<div class="linkbox"><div style="font-weight:600;">Link para envio de atas ${ativo?'<span class="pill pill-ok" style="margin-left:6px;">ativo</span>':'<span class="pill pill-muted" style="margin-left:6px;">sem link ativo</span>'}</div>${corpo}</div>`;
+}
+
 function stopListeners(){
   S.unsub.forEach(fn=>{ try{ fn(); }catch(e){} });
   S.unsub = []; S.started = false;
+  S.links = []; S.linkDocs = []; S._linkAtas = {}; S._linkSubs = {};
 }
 
 async function initCapabilities(){
@@ -721,6 +803,7 @@ function subscribeAll(){
     ['mandates', d => { S.mandates = d; renderMain(); }],
     ['members', d => { S.members = d; renderMain(); }],
     ['documents', d => { S.documents = d; renderMain(); }],
+    ['links', d => { S.links = d; syncLinkSubs(); renderMain(); }],
     ['trainings', d => { S.trainings = d; renderMain(); }],
     ['technicians', d => { S.technicians = d; renderMain(); }]
   ];
@@ -774,8 +857,9 @@ function unitMandates(unitId){
 function mandateMembers(mandateId){
   return S.members.filter(m=>m.mandateId===mandateId);
 }
+function docsAll(){ return S.documents.concat(S.linkDocs); }
 function unitDocuments(unitId, mandateId){
-  return S.documents.filter(d=>d.unitId===unitId && (!mandateId || d.mandateId===mandateId));
+  return docsAll().filter(d=>d.unitId===unitId && (!mandateId || d.mandateId===mandateId));
 }
 function memberTrainings(memberId){
   return S.trainings.filter(t=>t.memberId===memberId);
@@ -1781,6 +1865,7 @@ function renderMandatos(unit){
       </div>
       ${ra? `<div style="margin-top:12px;">${alertBoxHtml({...ra, type:'renewal', mandate:m})}</div>` : ''}
       ${m.renewal && m.renewal.stages && m.renewal.stages.length ? renewalSummaryHtml(m.renewal) : ''}
+      ${linkBoxHtml(m)}
     </div>`;
   }).join('')}`;
 }
@@ -1875,7 +1960,7 @@ function renderDocumentos(unit){
   const docLine = (d, grupo)=>{
     const principal = d.subtitulo || (d.name!==grupo ? d.name : (d.arquivo || 'Documento'));
     const arquivoNaMeta = d.arquivo && principal!==d.arquivo;
-    const meta = [arquivoNaMeta ? esc(d.arquivo) : null, 'enviado em '+fmtDate((d.uploadedAt||'').slice(0,10))].filter(Boolean).join(' · ');
+    const meta = [arquivoNaMeta ? esc(d.arquivo) : null, 'enviado em '+fmtDate((d.uploadedAt||'').slice(0,10)), d.fromLink ? 'via link'+(d.enviadoPor?' · '+esc(d.enviadoPor):'') : null].filter(Boolean).join(' · ');
     return `<div class="doc-item">
         <div class="doc-icon">${ico('doc')}</div>
         <div class="doc-info">
@@ -1883,7 +1968,7 @@ function renderDocumentos(unit){
           <div class="meta">${meta}</div>
         </div>
         <div class="top-actions">
-          <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.subtitulo||d.name)}">Abrir</button>
+          <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.subtitulo||d.name)}" data-token="${d.fromLink||''}">Abrir</button>
           <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
         </div>
       </div>`;
@@ -1940,7 +2025,7 @@ function monthsOfMandate(m){
   return out;
 }
 function mandateAtas(unitId, mandateId){
-  return S.documents.filter(d=>d.unitId===unitId && d.mandateId===mandateId && d.kind==='ata')
+  return docsAll().filter(d=>d.unitId===unitId && d.mandateId===mandateId && d.kind==='ata')
     .sort((a,b)=>(a.reuniaoData||'').localeCompare(b.reuniaoData||''));
 }
 
@@ -1952,8 +2037,8 @@ function renderAtas(unit){
   const cur = activeMandate(unit.id) || mandates[0];
   const curMonth = todayISO().slice(0,7);
   const ataLine = d => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0;">
-      <span><b>${esc(d.reuniaoTipo||'Ata')}</b> · ${d.reuniaoData?fmtDate(d.reuniaoData):'sem data'}${d.pauta?`<span class="faint"> · ${esc(d.pauta.length>60?d.pauta.slice(0,60)+'…':d.pauta)}</span>`:''}</span>
-      <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}">Abrir</button>
+      <span><b>${esc(d.reuniaoTipo||'Ata')}</b> · ${d.reuniaoData?fmtDate(d.reuniaoData):'sem data'}${d.pauta?`<span class="faint"> · ${esc(d.pauta.length>60?d.pauta.slice(0,60)+'…':d.pauta)}</span>`:''}${d.fromLink?` <span class="pill pill-info">via link${d.enviadoPor?' · '+esc(d.enviadoPor):''}</span>`:''}</span>
+      <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}" data-token="${d.fromLink||''}">Abrir</button>
       <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
     </div>`;
   return `
@@ -1964,6 +2049,7 @@ function renderAtas(unit){
     </div>
     <button class="btn btn-primary" id="btnNewAta" data-mandate="${cur.id}">${ico('plus')}Registrar ata</button>
   </div>
+  ${linkBoxHtml(cur)}
   <div style="height:12px;"></div>
   ${mandates.map(m=>{
     const months = monthsOfMandate(m);
@@ -2067,6 +2153,7 @@ function bindTabEvents(unit){
   b('[data-edit-mandate]', el=>openMandateModal(unit, byId(S.mandates, el.dataset.editMandate)));
   b('[data-del-mandate]', async el=>{
     if(confirm('Excluir este mandato? Membros e documentos vinculados continuarão existindo mas ficarão órfãos.')){
+      await deactivateLinks(el.dataset.delMandate);
       await dbDelete('mandates', el.dataset.delMandate);
       toast('Mandato excluído.', 'ok');
     }
@@ -2122,12 +2209,33 @@ function bindTabEvents(unit){
   b('#btnNewDoc', el=>openDocModal(unit, el.dataset.mandate));
   b('[data-add-doc-mandate]', el=>openDocModal(unit, el.dataset.addDocMandate));
   b('[data-del-doc]', async el=>{
-    if(confirm('Excluir este documento?')){
-      const doc = byId(S.documents, el.dataset.delDoc);
-      await dbDelete('documents', el.dataset.delDoc);
-      if(doc && doc.assetId && S.assets){ try{ await S.assets.delete(doc.assetId); }catch(e){} }
-      toast('Documento excluído.', 'ok');
+    if(!confirm('Excluir este documento?')) return;
+    const id = el.dataset.delDoc;
+    const doc = byId(S.documents, id);
+    if(doc){
+      await dbDelete('documents', id);
+      if(doc.assetId && S.assets){ try{ await S.assets.delete(doc.assetId); }catch(e){} }
+    } else {
+      const ld = byId(S.linkDocs, id);
+      if(ld){
+        try{
+          await S.db.subDoc('links', ld.fromLink, 'atas', ld.rawId).delete();
+          if(ld.assetId) await S.assets.delete(ld.assetId, ld.fromLink);
+        }catch(e){ toast('Não foi possível excluir: '+(e.message||e.code), 'err'); return; }
+      }
     }
+    toast('Documento excluído.', 'ok');
+  });
+  b('[data-gen-link]', async el=>{
+    const m = byId(S.mandates, el.dataset.genLink); if(!m) return;
+    if(S.links.some(l=>l.mandateId===m.id && l.ativo) && !confirm('O link atual deixará de funcionar. Gerar um novo link?')) return;
+    const t = await generateLink(unit, m);
+    if(t) toast('Novo link gerado.', 'ok');
+  });
+  b('[data-copy-link]', el=>copyLink(el.dataset.copyLink));
+  b('[data-toggle-link]', async el=>{
+    const parts = el.dataset.toggleLink.split('|');
+    if(await dbUpdate('links', parts[0], {ativo: parts[1]==='1'})) toast(parts[1]==='1' ? 'Link reativado.' : 'Link desativado.', 'ok');
   });
 
   b('#btnNewTraining', ()=>openTrainingModal(unit));
@@ -2151,7 +2259,7 @@ function bindTabEvents(unit){
   });
 
   b('#btnEditUnitInline', ()=>openUnitModal(unit));
-  b('[data-open-file]', el=>openStoredFile(el.dataset.openFile, el.dataset.name));
+  b('[data-open-file]', el=>openStoredFile(el.dataset.openFile, el.dataset.name, el.dataset.token));
   b('[data-open-unit-tab]', el=>goUnitTab(el.dataset.openUnitTab));
   b('[data-fix-mandate]', el=>openMandateModal(unit, byId(S.mandates, el.dataset.fixMandate)));
   b('[data-toggle-mandate]', el=>{
@@ -2284,6 +2392,7 @@ function openUnitModal(unit){
 
 /* ---------------- Mandate modal ---------------- */
 function openMandateModal(unit, mandate){
+  const temLink = !!(mandate && S.links.some(l=>l.mandateId===mandate.id && l.ativo));
   openModal(mandate? 'Editar mandato' : 'Novo mandato', `
     <div class="field-row">
       <div class="field"><label>Início *</label><input type="date" id="fMStart" value="${mandate?mandate.startDate:''}"></div>
@@ -2295,8 +2404,11 @@ function openMandateModal(unit, mandate){
         <option value="encerrado" ${mandate&&mandate.status==='encerrado'?'selected':''}>Encerrado</option>
       </select>
     </div>
+    ${temLink ? '' : `<label id="fMLinkWrap" style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--text);font-size:13px;"><input type="checkbox" id="fMLink" ${!mandate?'checked':''} style="margin-top:3px;"><span><b>Gerar link para envio de atas</b> (sem login)<br><span class="faint">Só para mandato ativo. A CIPA envia e consulta as atas por esse link.</span></span></label>`}
   `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
   document.getElementById('mCancel').addEventListener('click', closeModal);
+  const stSel = document.getElementById('fMStatus'), lkWrap = document.getElementById('fMLinkWrap');
+  if(lkWrap){ const syncLk = ()=>{ lkWrap.style.display = stSel.value==='ativo' ? 'flex' : 'none'; }; stSel.addEventListener('change', syncLk); syncLk(); }
   document.getElementById('mSave').addEventListener('click', async ()=>{
     const startDate = document.getElementById('fMStart').value;
     const endDate = document.getElementById('fMEnd').value;
@@ -2309,7 +2421,19 @@ function openMandateModal(unit, mandate){
     let ok;
     if(mandate) ok = await dbUpdate('mandates', mandate.id, data);
     else ok = await dbAdd('mandates', data);
-    if(ok){ closeModal(); toast('Mandato salvo.', 'ok'); }
+    if(ok){
+      const mid = mandate ? mandate.id : ok;
+      const chk = document.getElementById('fMLink');
+      if(data.status==='encerrado') await deactivateLinks(mid);
+      else {
+        for(const l of S.links.filter(x=>x.mandateId===mid && x.ativo)) await dbUpdate('links', l.id, {inicio:startDate, fim:endDate});
+        if(chk && chk.checked){
+          const t = await generateLink(unit, {id:mid, startDate, endDate});
+          if(t) toast('Mandato salvo e link para envio de atas gerado.', 'ok');
+        }
+      }
+      closeModal(); toast('Mandato salvo.', 'ok');
+    }
   });
 }
 

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Envio de atas · CIPA</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f5f7;--surface:#fff;--border:#e1e4e8;--text:#1b2430;--muted:#5e6a78;--primary:#17415f;--primary-soft:#e6eef4;--danger:#a3302a;--ok:#1f6b4c;--ok-soft:#e5f3ec;--warn:#7a4f00;--warn-soft:#fbf0d9}
+@media (prefers-color-scheme:dark){:root{--bg:#12161d;--surface:#1a1f29;--border:#2c3441;--text:#e7ebf0;--muted:#a3adba;--primary:#5b9bd1;--primary-soft:#1c2c3a;--danger:#e07a6c;--ok:#5cc490;--ok-soft:#1c3327;--warn:#e0b84a;--warn-soft:#3a3018}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,"Segoe UI",sans-serif;font-size:14px;line-height:1.45}
+header{display:flex;align-items:center;gap:12px;padding:18px 24px;background:var(--surface);border-bottom:1px solid var(--border)}
+.mark{width:32px;height:32px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center}
+.icon{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+header h1{margin:0;font-size:17px;font-weight:600}
+main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+h2{margin:0 0 4px;font-size:24px;font-weight:600}
+.sub{color:var(--muted);margin:0 0 20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 16px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-flex;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.ok{background:var(--ok-soft);color:var(--ok)}.warn{background:var(--warn-soft);color:var(--warn)}.info{background:var(--primary-soft);color:var(--primary)}.mut{background:var(--bg);color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;border:1px solid #cbd2da;background:var(--surface);color:var(--text);font-weight:500;font-size:13px;font-family:inherit;cursor:pointer}
+.btn:hover{border-color:var(--primary)}.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}.btn.sm{height:32px;padding:0 12px;font-size:12px}.btn:disabled{opacity:.6;cursor:not-allowed}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.aviso{padding:28px;text-align:center}
+.aviso h2{font-size:20px}
+.ata{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0}
+.faint{color:var(--muted);font-size:12px}
+.back{position:fixed;inset:0;background:rgba(10,15,25,.5);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;overflow-y:auto;z-index:50}
+.modal{background:var(--surface);border-radius:12px;width:100%;max-width:480px;padding:24px;display:flex;flex-direction:column;gap:12px}
+.modal h3{margin:0;font-size:18px}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:4px}
+input[type=text],input[type=date],select,textarea,input[type=file]{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);font:inherit}
+textarea{min-height:70px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.err{color:var(--danger);font-size:13px;min-height:18px}
+.actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:13px;z-index:80;max-width:320px}
+.toast.ok{background:var(--ok);color:#fff}.toast.err{background:var(--danger);color:#fff}
+.tw{overflow-x:auto}
+</style>
+</head>
+<body>
+<header>
+  <span class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span>
+  <h1>Envio de atas da CIPA</h1>
+</header>
+<main id="app"><div class="panel aviso">Carregando…</div></main>
+<div id="modalRoot"></div>
+<script type="module">
+import { firebaseConfig } from './firebase-config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import * as FS from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const TIPOS = ['Ordinária','Extraordinária','Posse','Outra'];
+const CHUNK = 700000, MAX_BYTES = 5 * 1024 * 1024;
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = d => { if (!d) return '—'; const p = String(d).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : d; };
+const hoje = () => new Date().toISOString().slice(0, 10);
+const ultimoDia = key => key + '-' + String(new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7), 0)).getUTCDate()).padStart(2, '0');
+
+const token = new URLSearchParams(location.search).get('t') || '';
+const state = { link: null, atas: [] };
+
+function aviso(titulo, texto) { $('app').innerHTML = '<div class="panel aviso"><h2>' + esc(titulo) + '</h2><p class="sub" style="margin:0">' + esc(texto) + '</p></div>'; }
+function toast(msg, tipo) { const t = document.createElement('div'); t.className = 'toast ' + (tipo || ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 4500); }
+
+let db;
+try { db = FS.initializeFirestore(initializeApp(firebaseConfig), { ignoreUndefinedProperties: true }); }
+catch (e) { aviso('Página indisponível', 'A configuração do Firebase está ausente.'); throw e; }
+
+function mesesDoMandato(ini, fim) {
+  const out = []; if (!ini || !fim || ini >= fim) return out;
+  let y = +ini.slice(0, 4), mo = +ini.slice(5, 7); const ey = +fim.slice(0, 4), emo = +fim.slice(5, 7);
+  while ((y < ey || (y === ey && mo <= emo)) && out.length < 14) { out.push({ key: y + '-' + String(mo).padStart(2, '0'), label: MESES[mo - 1] + '/' + y }); mo++; if (mo > 12) { mo = 1; y++; } }
+  return out;
+}
+
+const colArq = () => FS.collection(db, 'cipa_links', token, 'arquivos');
+async function enviarArquivo(file) {
+  if (file.size > MAX_BYTES) throw new Error('O arquivo tem mais de 5 MB. Reduza ou comprima antes de enviar.');
+  const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('Não foi possível ler o arquivo.')); r.readAsDataURL(file); });
+  const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const total = Math.max(1, Math.ceil(b64.length / CHUNK));
+  const type = file.type || 'application/octet-stream';
+  for (let i = 0; i < total; i++) {
+    await FS.setDoc(FS.doc(db, 'cipa_links', token, 'arquivos', id + '_' + String(i).padStart(3, '0')),
+      { fileId: id, idx: i, total, data: b64.slice(i * CHUNK, (i + 1) * CHUNK), contentType: type, name: file.name.slice(0, 200) });
+  }
+  return { id, type, size: file.size };
+}
+async function abrirArquivo(id, nome) {
+  const win = window.open('about:blank', '_blank');
+  try {
+    const snap = await FS.getDocs(FS.query(colArq(), FS.where('fileId', '==', id)));
+    const parts = snap.docs.map(d => d.data()).sort((a, b) => a.idx - b.idx);
+    if (!parts.length) throw new Error('Arquivo não encontrado.');
+    const bin = atob(parts.map(p => p.data).join(''));
+    const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: parts[0].contentType }));
+    if (win) win.location.href = url; else { const a = document.createElement('a'); a.href = url; a.download = nome || 'ata'; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { if (win) win.close(); toast('Não foi possível abrir o arquivo.', 'err'); }
+}
+
+function render() {
+  const l = state.link;
+  const meses = mesesDoMandato(l.inicio, l.fim);
+  const porMes = {}; state.atas.forEach(a => { const k = (a.reuniaoData || '').slice(0, 7); (porMes[k] = porMes[k] || []).push(a); });
+  const atual = hoje().slice(0, 7);
+  const linhaAta = a => '<div class="ata"><span><b>' + esc(a.reuniaoTipo || 'Ata') + '</b> · ' + fmtDate(a.reuniaoData) + (a.enviadoPor ? ' <span class="faint">· enviada por ' + esc(a.enviadoPor) + '</span>' : '') + '</span><button class="btn sm" data-abrir="' + esc(a.assetId) + '" data-nome="' + esc(a.nome || 'ata') + '">Abrir</button></div>';
+  const linhas = meses.map(m => {
+    const lista = (porMes[m.key] || []).slice().sort((x, y) => (x.reuniaoData || '').localeCompare(y.reuniaoData || ''));
+    const pill = lista.length ? '<span class="pill ok">Ata enviada</span>' : m.key < atual ? '<span class="pill warn">Pendente</span>' : m.key === atual ? '<span class="pill info">Neste mês</span>' : '<span class="pill mut">Previsto</span>';
+    return '<tr><td style="white-space:nowrap;font-weight:500">' + m.label + '</td><td>' + pill + '</td><td>' + (lista.length ? lista.map(linhaAta).join('') : '<span class="faint">Nenhuma ata enviada</span>') + '</td><td><button class="btn sm" data-enviar="' + m.key + '">Enviar ata</button></td></tr>';
+  }).join('');
+  const chaves = new Set(meses.map(m => m.key));
+  const extras = state.atas.filter(a => !chaves.has((a.reuniaoData || '').slice(0, 7)));
+  const extraLinha = extras.length ? '<tr><td style="font-weight:500">Fora do período</td><td><span class="pill mut">Outras</span></td><td>' + extras.map(linhaAta).join('') + '</td><td></td></tr>' : '';
+  $('app').innerHTML = '<div class="top"><div><h2>' + esc(l.unitName || 'CIPA') + '</h2><p class="sub" style="margin:0">Gestão ' + fmtDate(l.inicio) + ' a ' + fmtDate(l.fim) + '. Aqui você envia a ata de cada reunião e consulta as atas já enviadas.</p></div><button class="btn pri" id="bEnviar">Enviar ata</button></div><div class="panel tw"><table><thead><tr><th>Mês</th><th>Situação</th><th>Atas</th><th></th></tr></thead><tbody>' + (linhas || '<tr><td colspan="4" class="faint" style="padding:16px">Datas da gestão inválidas.</td></tr>') + extraLinha + '</tbody></table></div><p class="faint" style="margin-top:12px">Por aqui só é possível enviar e consultar. Para corrigir ou excluir uma ata, fale com o SESMT.</p>';
+  $('bEnviar').onclick = () => abrirForm(null);
+  document.querySelectorAll('[data-enviar]').forEach(b => b.onclick = () => abrirForm(b.dataset.enviar));
+  document.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => abrirArquivo(b.dataset.abrir, b.dataset.nome));
+}
+
+function fechar() { $('modalRoot').innerHTML = ''; }
+function abrirForm(mes) {
+  const l = state.link;
+  let min = l.inicio, max = l.fim;
+  if (mes) { min = mes + '-01' > l.inicio ? mes + '-01' : l.inicio; const u = ultimoDia(mes); max = u < l.fim ? u : l.fim; }
+  $('modalRoot').innerHTML = '<div class="back"><div class="modal"><h3>Enviar ata de reunião</h3>' +
+    '<div class="row2"><div><label for="aTipo">Tipo da reunião *</label><select id="aTipo">' + TIPOS.map(t => '<option>' + t + '</option>').join('') + '</select></div>' +
+    '<div><label for="aData">Data da reunião *</label><input type="date" id="aData" min="' + min + '" max="' + max + '"></div></div>' +
+    '<div><label for="aNome">Seu nome *</label><input type="text" id="aNome" maxlength="120" autocomplete="name"></div>' +
+    '<div><label for="aPauta">Pauta / observações (opcional)</label><textarea id="aPauta" maxlength="1000"></textarea></div>' +
+    '<div><label for="aFile">Arquivo da ata * (até 5 MB)</label><input type="file" id="aFile"></div>' +
+    '<div class="err" id="aErr" role="alert"></div>' +
+    '<div class="actions"><button class="btn" id="aCancel">Cancelar</button><button class="btn pri" id="aSave">Enviar</button></div></div></div>';
+  $('aCancel').onclick = fechar;
+  $('aSave').onclick = async () => {
+    const tipo = $('aTipo').value, data = $('aData').value, nome = $('aNome').value.trim(), pauta = $('aPauta').value.trim(), file = $('aFile').files[0];
+    const erro = t => { $('aErr').textContent = t; };
+    if (!data) return erro('Informe a data da reunião.');
+    if (data < l.inicio || data > l.fim) return erro('A data precisa estar dentro da gestão (' + fmtDate(l.inicio) + ' a ' + fmtDate(l.fim) + ').');
+    if (nome.length < 2) return erro('Informe o seu nome.');
+    if (!file) return erro('Anexe o arquivo da ata.');
+    if (file.size > MAX_BYTES) return erro('O arquivo tem mais de 5 MB. Reduza ou comprima antes de enviar.');
+    const btn = $('aSave'); btn.disabled = true; btn.textContent = 'Enviando…'; erro('');
+    try {
+      const up = await enviarArquivo(file);
+      await FS.addDoc(FS.collection(db, 'cipa_links', token, 'atas'), {
+        nome: 'Ata ' + tipo.toLowerCase() + ' — ' + fmtDate(data), reuniaoTipo: tipo, reuniaoData: data, pauta, enviadoPor: nome,
+        arquivo: file.name.slice(0, 200), assetId: up.id, contentType: up.type, sizeBytes: up.size, uploadedAt: new Date().toISOString()
+      });
+      fechar(); toast('Ata enviada. Obrigado!', 'ok');
+    } catch (e) {
+      console.error(e);
+      erro(e && e.code === 'permission-denied' ? 'Este link não está mais ativo. Peça um novo link ao SESMT.' : (e.message || 'Não foi possível enviar. Tente novamente.'));
+      btn.disabled = false; btn.textContent = 'Enviar';
+    }
+  };
+}
+
+(async () => {
+  if (!token) return aviso('Link inválido', 'Use o link completo que o SESMT enviou.');
+  try {
+    const snap = await FS.getDoc(FS.doc(db, 'cipa_links', token));
+    if (!snap.exists()) return aviso('Link inválido', 'Este link não existe. Peça um novo link ao SESMT.');
+    state.link = snap.data();
+    if (!state.link.ativo) return aviso('Link desativado', 'Este link não está mais ativo. Peça um novo link ao SESMT.');
+  } catch (e) { console.error(e); return aviso('Não foi possível abrir', 'Tente novamente em instantes. Se continuar, avise o SESMT.'); }
+  FS.onSnapshot(FS.collection(db, 'cipa_links', token, 'atas'),
+    s => { state.atas = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+    e => { console.error(e); aviso('Link desativado', 'Este link não está mais ativo. Peça um novo link ao SESMT.'); });
+})();
+</script>
+</body>
+</html>
