@@ -308,6 +308,7 @@ const S = {
   _expandedMandates: {},
   _selMembers: {},
   subtitulos: null,
+  user: null, isAdmin: false, perfil: null, usuarios: [], _buckets: {}, _perfilUnsub: null, _signupNome: null, _migrando: false, _migrFail: false,
   links: [], linkDocs: [], _linkAtas: {}, _linkSubs: {},
   _painelUnit: 'all',
   _painelFiltro: 'all',
@@ -563,11 +564,17 @@ function buildAdapters(app){
     };},
     doc: path => { const p = path.split('/'); const ref = FS.doc(fdb, COL_PREFIX+p[0], p[1]); return {
       onSnapshot: (next, err)=>FS.onSnapshot(ref, snap=>next({exists: snap.exists(), data: ()=>snap.data()}), err),
+      get: async ()=>{ const sn = await FS.getDoc(ref); return {exists: sn.exists(), data: ()=>sn.data()}; },
       set: d=>FS.setDoc(ref, d),
       update: d=>FS.updateDoc(ref, d),
       delete: ()=>FS.deleteDoc(ref)
     };}
   };
+  S.db.where = (name, filters) => {
+    const ref = FS.query(FS.collection(fdb, COL_PREFIX+name), ...filters.map(f=>FS.where(f[0], f[1], f[2])));
+    return { onSnapshot: (next, err)=>FS.onSnapshot(ref, next, err) };
+  };
+  S.db.getAll = async name => (await FS.getDocs(FS.collection(fdb, COL_PREFIX+name))).docs.map(d=>({id:d.id, ...d.data()}));
   S.db.sub = (col, id, sub) => { const ref = FS.collection(fdb, COL_PREFIX+col, id, sub); return {
     onSnapshot: (next, err)=>FS.onSnapshot(ref, next, err)
   };};
@@ -577,16 +584,28 @@ function buildAdapters(app){
   // Arquivos: guardados no próprio Firestore em base64, divididos em pedaços (sem Storage, sem plano Blaze).
   const CHUNK = 700000;                 // caracteres base64 por pedaço (~700 KB), abaixo do limite de 1 MiB por documento
   const MAX_BYTES = 5 * 1024 * 1024;    // tamanho máximo por arquivo
-  const arqCol = token => token ? FS.collection(fdb, COL_PREFIX+'links', token, 'arquivos') : FS.collection(fdb, COL_PREFIX+'arquivos');
+  const pad = i => String(i).padStart(3,'0');
+  const chunkRef = (id, i, token) => token
+    ? FS.doc(fdb, COL_PREFIX+'links', token, 'arquivos', id+'_'+pad(i))
+    : FS.doc(fdb, COL_PREFIX+'arquivos', id+'_'+pad(i));
   const fileToBase64 = file => new Promise((resolve, reject)=>{
     const r = new FileReader();
     r.onload = ()=>resolve(String(r.result).split(',')[1] || '');
     r.onerror = ()=>reject(new Error('Não foi possível ler o arquivo.'));
     r.readAsDataURL(file);
   });
+  async function chunkRefs(id, token){
+    const first = await FS.getDoc(chunkRef(id, 0, token));
+    if(!first.exists()) return [];
+    const total = first.data().total || 1;
+    const refs = [chunkRef(id, 0, token)];
+    for(let i=1;i<total;i++) refs.push(chunkRef(id, i, token));
+    return refs;
+  }
   async function chunksOf(id, token){
-    const snap = await FS.getDocs(FS.query(arqCol(token), FS.where('fileId','==',id)));
-    return snap.docs.map(d=>d.data()).sort((x,y)=>x.idx-y.idx);
+    const refs = await chunkRefs(id, token);
+    const snaps = await Promise.all(refs.map(r=>FS.getDoc(r)));
+    return snaps.filter(x=>x.exists()).map(x=>x.data()).sort((x,y)=>x.idx-y.idx);
   }
   S.assets = {
     maxBytes: MAX_BYTES,
@@ -605,8 +624,8 @@ function buildAdapters(app){
       return {id, url:'', contentType:type, sizeBytes:file.size};
     },
     async delete(id, token){
-      const snap = await FS.getDocs(FS.query(arqCol(token), FS.where('fileId','==',id)));
-      await Promise.all(snap.docs.map(d=>FS.deleteDoc(d.ref)));
+      const refs = await chunkRefs(id, token);
+      await Promise.all(refs.map(r=>FS.deleteDoc(r)));
     },
     async open(id, name, token){
       const parts = await chunksOf(id, token);
@@ -630,13 +649,14 @@ function showLogin(){
   showAuth(`
     <div class="brand" style="padding:0 0 12px;"><span class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span> Portal CIPA</div>
     <h2 style="margin:0 0 4px;font-size:20px;">Entrar</h2>
-    <div class="muted" style="font-size:13px;margin-bottom:16px;">Use o mesmo e-mail e senha dos sistemas do SESMT.</div>
+    <div class="muted" style="font-size:13px;margin-bottom:16px;">Entre com o seu e-mail e senha. Primeiro acesso? Crie a conta e aguarde a aprovação do SESMT.</div>
     <form id="loginForm" style="display:flex;flex-direction:column;gap:12px;">
       <div class="field"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" autocomplete="username" required></div>
       <div class="field"><label for="loginPass">Senha</label><input id="loginPass" type="password" autocomplete="current-password" required></div>
       <div id="loginErr" style="color:var(--danger);font-size:13px;min-height:18px;" role="alert"></div>
       <button class="btn btn-primary" type="submit" style="justify-content:center;">Entrar</button>
       <button class="btn" type="button" id="loginReset" style="justify-content:center;">Esqueci a senha</button>
+      <button class="btn" type="button" id="loginSignup" style="justify-content:center;">Criar conta</button>
     </form>`);
   const err = document.getElementById('loginErr');
   document.getElementById('loginForm').addEventListener('submit', async e=>{
@@ -656,6 +676,62 @@ function showLogin(){
     try{ await AU.sendPasswordResetEmail(S.auth, email); err.style.color='var(--ok)'; err.textContent='Enviamos um link de redefinição para o seu e-mail.'; }
     catch(ex){ err.style.color='var(--danger)'; err.textContent='Não foi possível enviar o e-mail de redefinição.'; }
   });
+  document.getElementById('loginSignup').addEventListener('click', showSignup);
+}
+
+function showSignup(){
+  showAuth(`
+    <div class="brand" style="padding:0 0 12px;"><span class="mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></span> Portal CIPA</div>
+    <h2 style="margin:0 0 4px;font-size:20px;">Criar conta</h2>
+    <div class="muted" style="font-size:13px;margin-bottom:16px;">Depois de criar a conta, o administrador do SESMT precisa aprovar o seu acesso e definir o que você poderá ver.</div>
+    <form id="signupForm" style="display:flex;flex-direction:column;gap:12px;">
+      <div class="field"><label for="suNome">Nome completo</label><input id="suNome" type="text" autocomplete="name" required></div>
+      <div class="field"><label for="suEmail">E-mail</label><input id="suEmail" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="suPass">Senha (mínimo 6 caracteres)</label><input id="suPass" type="password" autocomplete="new-password" required></div>
+      <div class="field"><label for="suPass2">Repita a senha</label><input id="suPass2" type="password" autocomplete="new-password" required></div>
+      <div id="suErr" style="color:var(--danger);font-size:13px;min-height:18px;" role="alert"></div>
+      <button class="btn btn-primary" type="submit" style="justify-content:center;">Criar conta</button>
+      <button class="btn" type="button" id="suBack" style="justify-content:center;">Voltar</button>
+    </form>`);
+  const err = document.getElementById('suErr');
+  document.getElementById('suBack').addEventListener('click', showLogin);
+  document.getElementById('signupForm').addEventListener('submit', async e=>{
+    e.preventDefault(); err.textContent = '';
+    const nome = document.getElementById('suNome').value.trim();
+    const email = document.getElementById('suEmail').value.trim();
+    const pass = document.getElementById('suPass').value, pass2 = document.getElementById('suPass2').value;
+    if(nome.length < 3){ err.textContent = 'Informe o seu nome completo.'; return; }
+    if(pass.length < 6){ err.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; return; }
+    if(pass !== pass2){ err.textContent = 'As senhas não conferem.'; return; }
+    S._signupNome = nome;
+    try{
+      const cred = await AU.createUserWithEmailAndPassword(S.auth, email, pass);
+      try{ await AU.updateProfile(cred.user, {displayName: nome}); }catch(_){}
+    }catch(ex){
+      S._signupNome = null;
+      const c = ex && ex.code || '';
+      err.textContent = c==='auth/email-already-in-use' ? 'Este e-mail já tem conta. Volte e use "Entrar" ou "Esqueci a senha".'
+        : c==='auth/weak-password' ? 'Senha fraca. Use pelo menos 6 caracteres.'
+        : c==='auth/invalid-email' ? 'E-mail inválido.'
+        : c==='auth/operation-not-allowed' ? 'O cadastro está desativado. Fale com o SESMT.'
+        : 'Não foi possível criar a conta. Tente novamente.';
+    }
+  });
+}
+
+function showPendente(user){
+  showAuth(`
+    <h2 style="margin:0 0 8px;font-size:20px;">Cadastro aguardando aprovação</h2>
+    <div class="muted" style="font-size:14px;margin-bottom:16px;">Recebemos o cadastro de <b>${esc(user.email||'')}</b>. O administrador do SESMT vai revisar e liberar o seu acesso. Esta tela libera o portal sozinha assim que for aprovado, então você pode deixá-la aberta.</div>
+    <button class="btn" id="btnLogoutPend" style="width:100%;justify-content:center;">Sair</button>`);
+  document.getElementById('btnLogoutPend').addEventListener('click', ()=>AU.signOut(S.auth));
+}
+function showRecusado(user){
+  showAuth(`
+    <h2 style="margin:0 0 8px;font-size:20px;">Acesso não liberado</h2>
+    <div class="muted" style="font-size:14px;margin-bottom:16px;">O cadastro de <b>${esc(user.email||'')}</b> não foi aprovado. Se isso for um engano, fale com o administrador do SESMT.</div>
+    <button class="btn" id="btnLogoutRec" style="width:100%;justify-content:center;">Sair</button>`);
+  document.getElementById('btnLogoutRec').addEventListener('click', ()=>AU.signOut(S.auth));
 }
 
 function showNoAccess(user){
@@ -751,10 +827,47 @@ function linkBoxHtml(m){
   return `<div class="linkbox"><div style="font-weight:600;">Link para envio de atas ${ativo?'<span class="pill pill-ok" style="margin-left:6px;">ativo</span>':'<span class="pill pill-muted" style="margin-left:6px;">sem link ativo</span>'}</div>${corpo}</div>`;
 }
 
-function stopListeners(){
+function stopData(){
   S.unsub.forEach(fn=>{ try{ fn(); }catch(e){} });
   S.unsub = []; S.started = false;
-  S.links = []; S.linkDocs = []; S._linkAtas = {}; S._linkSubs = {};
+  S.units = []; S.mandates = []; S.members = []; S.documents = []; S.trainings = []; S.technicians = [];
+  S.links = []; S.linkDocs = []; S._linkAtas = {}; S._linkSubs = {}; S._buckets = {};
+}
+function stopListeners(){
+  stopData();
+  if(S._perfilUnsub){ try{ S._perfilUnsub(); }catch(e){} S._perfilUnsub = null; }
+}
+
+function watchPerfil(user){
+  S._perfilUnsub = S.db.doc('usuarios/'+user.uid).onSnapshot(async snap=>{
+    if(S.user !== user) return;
+    if(!snap.exists){
+      try{
+        await S.db.doc('usuarios/'+user.uid).set({
+          email: user.email || '', nome: S._signupNome || user.displayName || '', status: 'pendente',
+          unidades: [], permissoes: {}, criadoEm: new Date().toISOString()
+        });
+        S._signupNome = null;
+      }catch(e){
+        console.error(e);
+        showAuth('<h2 style="margin:0 0 8px;font-size:20px;">Não foi possível registrar o cadastro</h2><div class="muted" style="font-size:14px;margin-bottom:16px;">Tente sair e entrar de novo. Se continuar, avise o administrador do SESMT.</div><button class="btn" id="btnLogoutErr" style="width:100%;justify-content:center;">Sair</button>');
+        document.getElementById('btnLogoutErr').addEventListener('click', ()=>AU.signOut(S.auth));
+      }
+      return;
+    }
+    const antes = JSON.stringify(S.perfil && {u:S.perfil.unidades, p:S.perfil.permissoes, s:S.perfil.status});
+    S.perfil = snap.data();
+    const depois = JSON.stringify({u:S.perfil.unidades, p:S.perfil.permissoes, s:S.perfil.status});
+    if(S.perfil.status === 'aprovado'){
+      hideAuth(); renderUserFooter(user);
+      if(!S.started || antes !== depois){ stopData(); S.started = true; subscribeScoped(); }
+    } else {
+      stopData();
+      document.getElementById('userFooter').innerHTML = '';
+      renderSidebar(); renderMain();
+      if(S.perfil.status === 'recusado') showRecusado(user); else showPendente(user);
+    }
+  }, err=>{ console.error('perfil', err); });
 }
 
 async function initCapabilities(){
@@ -765,22 +878,18 @@ async function initCapabilities(){
     buildAdapters(app);
   }catch(e){
     console.error(e);
-    document.getElementById('content').innerHTML = '<div class="empty">Configuração do Firebase ausente ou inválida.<br>Confira o arquivo public/firebase-config.js.</div>';
+    document.getElementById('content').innerHTML = '<div class="empty">Configuração do Firebase ausente ou inválida.<br>Confira o arquivo firebase-config.js.</div>';
     return;
   }
   AU.onAuthStateChanged(S.auth, async user=>{
-    if(!user){ stopListeners(); document.getElementById('userFooter').innerHTML=''; showLogin(); return; }
-    let ok = !exigirLiberacao;
-    if(exigirLiberacao){
-      try{
-        const snap = await FS.getDoc(FS.doc(S.fdb, 'sesmt_acessos', user.uid));
-        ok = snap.exists() && snap.data().cipa === true;
-      }catch(e){ console.error(e); }
-    }
-    if(!ok){ stopListeners(); showNoAccess(user); return; }
-    hideAuth();
-    renderUserFooter(user);
-    if(!S.started){ S.started = true; subscribeAll(); }
+    stopListeners(); S.isAdmin = false; S.perfil = null; S.user = user || null;
+    if(!user){ document.getElementById('userFooter').innerHTML=''; renderSidebar(); showLogin(); return; }
+    let admin = false;
+    try{ await S.db.getAll('usuarios'); admin = true; }catch(e){ admin = false; }
+    if(S.user !== user) return;
+    S.isAdmin = admin;
+    if(admin){ hideAuth(); renderUserFooter(user); S.started = true; subscribeAll(); return; }
+    watchPerfil(user);
   });
 }
 
@@ -797,6 +906,51 @@ function renderUserFooter(user){
 }
 
 /* ---------------- subscriptions ---------------- */
+/* ---------------- Permissões ---------------- */
+const AREAS = [['mandatos','Mandatos'],['membros','Membros'],['documentos','Documentos'],['atas','Atas'],['treinamentos','Treinamentos'],['renovacoes','Renovações']];
+function nivelDe(area){
+  if(S.isAdmin) return 'editar';
+  const p = S.perfil;
+  return (p && p.status==='aprovado' && p.permissoes && p.permissoes[area]) || 'nenhum';
+}
+function podeVer(area){ return nivelDe(area) !== 'nenhum'; }
+function podeEditar(area){ return nivelDe(area) === 'editar'; }
+
+function subscribeScoped(){
+  const unidades = (S.perfil && S.perfil.unidades) || [];
+  const mapDocs = snap => snap.docs.map(d=>({id:d.id, ...d.data()}));
+  const errH = nome => err => { console.error(nome, err); if(err.code!=='unavailable') toast('Erro ao carregar '+nome+': '+err.message, 'err'); };
+  const add = unsub => S.unsub.push(unsub);
+  const aplicar = (col, flat)=>{
+    if(col==='units'){ S.units = flat; renderSidebar(); }
+    else if(col==='mandates') S.mandates = flat;
+    else if(col==='members') S.members = flat;
+    else if(col==='documents') S.documents = flat;
+    else if(col==='trainings') S.trainings = flat;
+    else if(col==='links'){ S.links = flat; syncLinkSubs(); }
+    renderMain();
+  };
+  const setBucket = (col, key, docs)=>{
+    (S._buckets[col] = S._buckets[col] || {})[key] = docs;
+    aplicar(col, [].concat(...Object.values(S._buckets[col])));
+  };
+  S.ready.units = true;
+  unidades.forEach(u=>{
+    add(S.db.doc('units/'+u).onSnapshot(snap=>setBucket('units', u, snap.exists ? [{id:u, ...snap.data()}] : []), errH('unidade')));
+    add(S.db.where('mandates', [['unitId','==',u]]).onSnapshot(snap=>setBucket('mandates', u, mapDocs(snap)), errH('mandatos')));
+    if(podeVer('membros') || podeVer('treinamentos')) add(S.db.where('members', [['unitId','==',u]]).onSnapshot(snap=>setBucket('members', u, mapDocs(snap)), errH('membros')));
+    ['documentos','atas'].forEach(area=>{
+      if(podeVer(area)) add(S.db.where('documents', [['unitId','==',u],['area','==',area]]).onSnapshot(snap=>setBucket('documents', u+'|'+area, mapDocs(snap)), errH(area)));
+    });
+    if(podeVer('treinamentos')) add(S.db.where('trainings', [['unitId','==',u]]).onSnapshot(snap=>setBucket('trainings', u, mapDocs(snap)), errH('treinamentos')));
+    if(podeVer('atas')) add(S.db.where('links', [['unitId','==',u]]).onSnapshot(snap=>setBucket('links', u, mapDocs(snap)), errH('links')));
+  });
+  add(S.db.collection('technicians').onSnapshot(snap=>{ S.technicians = mapDocs(snap); renderMain(); }, errH('técnicos')));
+  add(S.db.doc('config/dimensionamento').onSnapshot(snap=>{ S.dimensionamento = snap.exists ? snap.data() : null; renderMain(); }, err=>console.error('dimensionamento', err)));
+  add(S.db.doc('config/subtitulos').onSnapshot(snap=>{ S.subtitulos = snap.exists ? snap.data() : null; renderMain(); }, err=>console.error('subtitulos', err)));
+  renderSidebar(); renderMain();
+}
+
 function subscribeAll(){
   const cols = [
     ['units', d => { S.units = d; S.ready.units = true; renderSidebar(); renderMain(); }],
@@ -805,7 +959,8 @@ function subscribeAll(){
     ['documents', d => { S.documents = d; renderMain(); }],
     ['links', d => { S.links = d; syncLinkSubs(); renderMain(); }],
     ['trainings', d => { S.trainings = d; renderMain(); }],
-    ['technicians', d => { S.technicians = d; renderMain(); }]
+    ['technicians', d => { S.technicians = d; renderMain(); }],
+    ['usuarios', d => { S.usuarios = d; renderSidebar(); renderMain(); }]
   ];
   cols.forEach(([name, cb])=>{
     const unsub = S.db.collection(name).onSnapshot(
@@ -1055,14 +1210,15 @@ function unitMetrics(unit){
   const members = am ? mandateMembers(am.id) : [];
   const ra = am ? mandateRenewalAlert(am) : null;
   const inRenewal = !!(am && am.renewal && am.renewal.stages && am.renewal.stages.length && am.renewal.status!=='concluido');
-  const atasPend = unitAtasPendentes(unit, am);
+  const atasPend = podeVer('atas') ? unitAtasPendentes(unit, am) : 0;
   const ids = new Set(members.map(m=>m.id));
-  const trs = latestTrainings(S.trainings.filter(t=>ids.has(t.memberId)));
+  const veTreino = podeVer('treinamentos');
+  const trs = veTreino ? latestTrainings(S.trainings.filter(t=>ids.has(t.memberId))) : [];
   const hoje = todayISO();
   const vencidos = trs.filter(t=>t.expiryDate && t.expiryDate < hoje).length;
   const aVencer = trs.filter(t=>{ if(!t.expiryDate || t.expiryDate < hoje) return false; return daysBetween(hoje, t.expiryDate) <= 45; }).length;
   const comTreino = new Set(S.trainings.filter(t=>ids.has(t.memberId)).map(t=>t.memberId));
-  const semTreino = members.filter(m=>!comTreino.has(m.id)).length;
+  const semTreino = veTreino ? members.filter(m=>!comTreino.has(m.id)).length : 0;
   const motivos = [];
   if(!am) motivos.push('Sem mandato');
   else if(ra && ra.level==='danger') motivos.push(ra.label);
@@ -1083,16 +1239,16 @@ function computeAllAlerts(){
       if(!curM || m.id!==curM.id) return; // gestões antigas não geram alertas
       const ra = mandateRenewalAlert(m);
       if(ra) alerts.push({...ra, unit:u, mandate:m, type:'renewal'});
-      mandateMembers(m.id).forEach(mem=>{
+      if(podeVer('membros')) mandateMembers(m.id).forEach(mem=>{
         if(mem.consecutiveAlert){
           alerts.push({level:'warn', text:'2º mandato consecutivo possível: '+esc(mem.name)+' (verificar elegibilidade conforme NR-05).', unit:u, mandate:m, member:mem, type:'consecutive'});
         }
       });
     });
-    const n = unitAtasPendentes(u, curM);
+    const n = podeVer('atas') ? unitAtasPendentes(u, curM) : 0;
     if(n>0) alerts.push({level:'danger', label:'Ata pendente', text:n+' mês(es) da gestão atual sem ata registrada.', unit:u, mandate:curM, type:'ata'});
   });
-  latestTrainings(S.trainings).forEach(t=>{
+  if(podeVer('treinamentos')) latestTrainings(S.trainings).forEach(t=>{
     if(!currentIds.has(t.memberId)) return; // só membros da gestão atual
     const ta = trainingExpiryAlert(t);
     if(ta){
@@ -1110,12 +1266,16 @@ function renderSidebar(){
   const navEl = document.getElementById('globalNav');
   if(navEl){
     const activeProcesses = allRenewalProcesses().filter(p=>renewalStatusInfo(p.mandate.renewal).level!=='ok').length;
+    const pendentes = S.isAdmin ? S.usuarios.filter(u=>u.status==='pendente').length : 0;
     const NAV = [
       {id:'dashboard', label:'Painel', icon:'painel'},
-      {id:'renewals', label:'Renovações', icon:'renovar', badge:activeProcesses},
+      ...(podeVer('renovacoes') ? [{id:'renewals', label:'Renovações', icon:'renovar', badge:activeProcesses}] : []),
       {id:'dimensionamento', label:'Dimensionamento', icon:'calc'},
-      {id:'relatorios', label:'Relatórios', icon:'relat'}
+      {id:'relatorios', label:'Relatórios', icon:'relat'},
+      ...(S.isAdmin ? [{id:'acessos', label:'Acessos', icon:'usuario', badge:pendentes}] : [])
     ];
+    const btnAdd = document.getElementById('btnAddUnit');
+    if(btnAdd) btnAdd.style.display = S.isAdmin ? '' : 'none';
     navEl.innerHTML = NAV.map(n=>`<div class="unit-item ${!S.currentUnitId && S.globalView===n.id ? 'active':''}" data-nav="${n.id}">
       <span>${ico(n.icon)}${n.label}</span>
       ${n.badge? `<span class="badge-count" style="background:var(--warn-soft);color:var(--warn);">${n.badge}</span>` : ''}
@@ -1144,20 +1304,21 @@ function renderSidebar(){
 /* ---------------- tabs (seções da unidade) ---------------- */
 const TABS = [
   {id:'visao', label:'Visão geral'},
-  {id:'mandatos', label:'Mandatos'},
-  {id:'membros', label:'Membros'},
-  {id:'documentos', label:'Documentos'},
-  {id:'atas', label:'Atas'},
-  {id:'treinamentos', label:'Treinamentos'},
+  {id:'mandatos', label:'Mandatos', areas:['mandatos','renovacoes']},
+  {id:'membros', label:'Membros', areas:['membros']},
+  {id:'documentos', label:'Documentos', areas:['documentos']},
+  {id:'atas', label:'Atas', areas:['atas']},
+  {id:'treinamentos', label:'Treinamentos', areas:['treinamentos']},
   {id:'alertas', label:'Alertas'}
 ];
+const tabVisivel = t => !t || !t.areas || t.areas.some(podeVer);
 
 function renderTabs(){
   const wrap = document.getElementById('tabs');
   if(!S.currentUnitId){ wrap.innerHTML=''; wrap.style.display='none'; return; }
   wrap.style.display = 'flex';
   const alertCount = computeAllAlerts().filter(a=>a.unit && a.unit.id===S.currentUnitId).length;
-  wrap.innerHTML = TABS.map(t=>{
+  wrap.innerHTML = TABS.filter(tabVisivel).map(t=>{
     return `<div class="tab ${S.currentTab===t.id?'active':''}" data-tab="${t.id}">${t.label}${t.id==='alertas' && alertCount>0?`<span class="tab-count">${alertCount}</span>`:''}</div>`;
   }).join('');
   wrap.querySelectorAll('.tab').forEach(el=>{
@@ -1167,6 +1328,46 @@ function renderTabs(){
 
 /* ---------------- main render router ---------------- */
 function renderMain(){
+  if(S.currentUnitId && !tabVisivel(TABS.find(t=>t.id===S.currentTab))) S.currentTab = 'visao';
+  if(S.globalView==='acessos' && !S.isAdmin) S.globalView = 'dashboard';
+  if(S.globalView==='renewals' && !podeVer('renovacoes')) S.globalView = 'dashboard';
+  renderMainCore();
+  gateDom();
+  maybeMigrate();
+}
+
+function gateDom(){
+  const c = document.getElementById('content');
+  const hide = sel => c.querySelectorAll(sel).forEach(el=>{ el.style.display = 'none'; });
+  if(!podeEditar('membros')) hide('#btnNewMember,#btnImportMembers,[data-add-member-mandate],[data-edit-member],[data-del-member],[data-sel-member],[data-sel-all],#btnBulkDelMembers,#btnClearSel');
+  if(!podeEditar('documentos')) hide('#btnNewDoc,[data-add-doc-mandate],[data-del-doc][data-area="documentos"]');
+  if(!podeEditar('atas')) hide('#btnNewAta,[data-add-ata],[data-del-doc][data-area="atas"]');
+  if(!podeEditar('treinamentos')) hide('#btnImportTrainings,#btnGroupTraining,#btnNewTraining,[data-del-training]');
+  if(!podeEditar('mandatos')) hide('#btnNewMandate,#btnNewMandateQuick,[data-edit-mandate],[data-del-mandate],[data-fix-mandate]');
+  if(!podeEditar('renovacoes')) hide('[data-renewal-action],[data-start-renewal],[data-manage-renewal]');
+  if(!S.isAdmin){
+    hide('.linkbox,#btnSubtitulos,#btnAddUnitEmpty,#btnEditUnitInline,#btnSaveDim,#btnResetDim');
+    const eb = document.getElementById('btnEditUnit'); if(eb) eb.style.display = 'none';
+  }
+}
+
+/* Dados antigos (anteriores ao controle de acesso) ganham unitId/area; só o administrador executa, uma vez. */
+async function maybeMigrate(){
+  if(!S.isAdmin || S._migrando || S._migrFail) return;
+  const trs = S.trainings.filter(t=>!t.unitId && byId(S.members, t.memberId));
+  const docs = S.documents.filter(d=>!d.area);
+  if(!trs.length && !docs.length) return;
+  S._migrando = true;
+  try{
+    for(const t of trs) await S.db.doc('trainings/'+t.id).update({unitId: byId(S.members, t.memberId).unitId});
+    for(const d of docs) await S.db.doc('documents/'+d.id).update({area: (d.kind==='ata') ? 'atas' : 'documentos'});
+  }catch(e){ console.error('migração', e); S._migrFail = true; }
+  S._migrando = false;
+  S._migrRodadas = (S._migrRodadas || 0) + 1;
+  if(!S._migrFail && S._migrRodadas < 5) setTimeout(maybeMigrate, 0); // confere se sobrou algo (ex.: documentos que chegaram depois)
+}
+
+function renderMainCore(){
   renderTabs();
   const title = document.getElementById('pageTitle');
   const sub = document.getElementById('pageSub');
@@ -1187,6 +1388,13 @@ function renderMain(){
       sub.textContent = 'Calculadora e tabela de dimensionamento da CIPA, válida para todas as unidades (Quadro I — NR-05).';
       content.innerHTML = renderDimensionamento();
       bindDimensionamentoEvents();
+      return;
+    }
+    if(S.globalView==='acessos' && S.isAdmin){
+      title.textContent = 'Acessos';
+      sub.textContent = 'Aprove os cadastros e defina, para cada técnico, as unidades e o que ele pode ver ou editar.';
+      content.innerHTML = renderAcessos();
+      bindAcessos();
       return;
     }
     if(S.globalView==='relatorios'){
@@ -1301,7 +1509,7 @@ const PAINEL_FILTRO_NOMES = {regular:'Regulares', renovacao:'Em renovação', ir
 
 function renderGlobalDashboard(){
   if(S.units.length===0){
-    return `<div class="empty"><div class="big">${ico('predio','style="width:32px;height:32px"')}</div>Nenhuma unidade cadastrada ainda.<br><br><button class="btn btn-primary" id="btnAddUnitEmpty">${ico('plus')}Cadastrar primeira unidade</button></div>`;
+    return `<div class="empty"><div class="big">${ico('predio','style="width:32px;height:32px"')}</div>Nenhuma unidade cadastrada ainda.<br><br><button class="btn btn-primary" id="btnAddUnitEmpty">${ico('plus')}Cadastrar primeira unidade</button>${S.isAdmin?` <button class="btn" id="btnImportUnidades">${ico('upload')}Importar planilha</button> <button class="btn" id="btnTemplateUnidades">${ico('download')}Baixar modelo</button>`:''}</div>`;
   }
   if(S._painelUnit!=='all' && !byId(S.units, S._painelUnit)) S._painelUnit = 'all';
   const unitsSorted = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
@@ -1328,6 +1536,8 @@ function renderGlobalDashboard(){
     ? alerts.slice(0,8).map(attentionRowHtml).join('') + (alerts.length>8 ? `<div class="lrow"><span></span><div class="s">+ ${alerts.length-8} outro(s) — abra a unidade para ver todos</div><span></span></div>` : '')
     : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${S._painelUnit==='all'?' nas unidades':' nesta unidade'}.</div><span></span></div>`;
 
+  const pendU = S.isAdmin ? S.usuarios.filter(u=>u.status==='pendente') : [];
+  const pendRow = pendU.length ? `<div class="lrow"><span class="pill pill-warn" style="justify-self:start;">Acesso</span><div><div class="t">${pendU.length} cadastro(s) aguardando aprovação</div><div class="s">${esc(pendU.slice(0,3).map(u=>u.nome||u.email).join(', '))}${pendU.length>3?'…':''}</div></div><div><button class="btn btn-primary" data-go-acessos="1">Revisar</button></div></div>` : '';
   const linhas = visiveis.map(x=>{
     const u = x.unit, am = x.am;
     const atasCel = !am ? '<span class="faint">—</span>' : (x.atasPend ? `<span class="pill pill-danger">${x.atasPend} pendente(s)</span>` : '<span class="pill pill-ok">Em dia</span>');
@@ -1350,7 +1560,10 @@ function renderGlobalDashboard(){
       <label for="fPainelUnit" style="font-weight:600;font-size:13px;">Visualizar</label>
       <select id="fPainelUnit"><option value="all">Todas as unidades (geral)</option>${unitsSorted.map(u=>`<option value="${u.id}" ${u.id===S._painelUnit?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
     </div>
-    ${filtro!=='all' ? `<div style="display:flex;align-items:center;gap:10px;"><span class="pill pill-info">Filtro: ${PAINEL_FILTRO_NOMES[filtro]}</span><button class="btn" id="btnLimparFiltro">Limpar filtro</button></div>` : ''}
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      ${filtro!=='all' ? `<span class="pill pill-info">Filtro: ${PAINEL_FILTRO_NOMES[filtro]}</span><button class="btn" id="btnLimparFiltro">Limpar filtro</button>` : ''}
+      ${S.isAdmin ? `<button class="btn" id="btnTemplateUnidades">${ico('download')}Baixar modelo</button><button class="btn" id="btnImportUnidades">${ico('upload')}Importar unidades</button>` : ''}
+    </div>
   </div>
   <div class="kpis k3">
     ${kpi('regular', cnt('regular'), 'Regulares', 'de '+nUn+' unidade(s)', 'var(--ok)')}
@@ -1359,13 +1572,13 @@ function renderGlobalDashboard(){
   </div>
   <div class="hint" style="margin:0 0 12px;">Irregular: mandato vencido ou sem renovação no prazo, ata pendente ou certificado vencido. Em renovação: processo eleitoral em andamento e sem irregularidade. Regular: as demais.</div>
   <div class="kpis k3">
-    <div class="kpi"><div class="num">${cipeiros}</div><div class="label">Cipeiros no mandato atual</div><div class="sub">${eleitos} eleitos · ${indicados} indicados</div></div>
-    ${kpi('atas', atasPend, 'Atas pendentes', 'meses sem ata, em '+unAtas+' unidade(s)', atasPend?'var(--danger)':'var(--text)')}
-    ${kpi('cert', vencidos, 'Certificados vencidos', aVencer+' a vencer em 45 dias · '+semTreino+' membro(s) sem treinamento', vencidos?'var(--danger)':'var(--text)')}
+    <div class="kpi"><div class="num">${(podeVer('membros')||podeVer('treinamentos'))?cipeiros:'—'}</div><div class="label">Cipeiros no mandato atual</div><div class="sub">${eleitos} eleitos · ${indicados} indicados</div></div>
+    ${kpi('atas', podeVer('atas')?atasPend:'—', 'Atas pendentes', 'meses sem ata, em '+unAtas+' unidade(s)', atasPend?'var(--danger)':'var(--text)')}
+    ${kpi('cert', podeVer('treinamentos')?vencidos:'—', 'Certificados vencidos', aVencer+' a vencer em 45 dias · '+semTreino+' membro(s) sem treinamento', vencidos?'var(--danger)':'var(--text)')}
   </div>
   <div class="panel" style="margin-top:12px;">
     <div class="panel-head">Precisa de atenção</div>
-    ${attention}
+    ${pendRow}${attention}
   </div>
   <div class="panel">
     <div class="panel-head">Unidades <span class="muted" style="font-weight:400;font-size:13px;">mostrando ${visiveis.length} de ${escopo.length}</span></div>
@@ -1381,8 +1594,11 @@ function bindGlobalDashboard(){
     S._painelFiltro = (S._painelFiltro===b.dataset.filtro) ? 'all' : b.dataset.filtro;
     renderMain();
   }));
+  document.querySelectorAll('[data-go-acessos]').forEach(b=>b.addEventListener('click', ()=>{ S.currentUnitId = null; S.globalView = 'acessos'; renderSidebar(); renderMain(); }));
   const sel = document.getElementById('fPainelUnit');
   if(sel) sel.addEventListener('change', ()=>{ S._painelUnit = sel.value; renderMain(); });
+  const bImp = document.getElementById('btnImportUnidades'); if(bImp) bImp.addEventListener('click', openImportUnidadesModal);
+  const bTpl = document.getElementById('btnTemplateUnidades'); if(bTpl) bTpl.addEventListener('click', downloadUnidadesTemplate);
   const lim = document.getElementById('btnLimparFiltro');
   if(lim) lim.addEventListener('click', ()=>{ S._painelFiltro = 'all'; renderMain(); });
   const btn = document.getElementById('btnAddUnitEmpty');
@@ -1617,6 +1833,75 @@ function bindRelatoriosEvents(){
   if(selUnit) selUnit.addEventListener('change', e=>{ S._relatorioUnitId = e.target.value; renderMain(); });
   const btnPrint = document.getElementById('btnPrintReport');
   if(btnPrint) btnPrint.addEventListener('click', ()=>window.print());
+}
+
+/* ---------------- Acessos (aprovação de técnicos) ---------------- */
+const NIVEIS = [['nenhum','Sem acesso'],['ver','Só ver'],['editar','Ver e editar']];
+function resumoAreas(u){
+  const out = AREAS.map(([k,l])=>{ const n = (u.permissoes||{})[k]; return n && n!=='nenhum' ? l+(n==='editar'?' (edita)':' (vê)') : null; }).filter(Boolean);
+  return out.length ? out.join(' · ') : '<span class="faint">nenhuma área liberada</span>';
+}
+function renderAcessos(){
+  const lista = S.usuarios.slice().sort((a,b)=>(a.criadoEm||'').localeCompare(b.criadoEm||''));
+  const nomeUn = id => { const u = byId(S.units, id); return u ? esc(u.name) : '<span class="faint">(unidade removida)</span>'; };
+  const grupos = [['pendente','Aguardando aprovação','pill-warn'],['aprovado','Aprovados','pill-ok'],['recusado','Recusados','pill-muted']];
+  const html = grupos.map(([st, titulo, cls])=>{
+    const itens = lista.filter(u=>(u.status||'pendente')===st);
+    if(!itens.length && st!=='pendente') return '';
+    const linhas = itens.map(u=>`<tr${st==='pendente'?' style="background:var(--warn-soft);"':''}>
+      <td><div style="font-weight:500;">${esc(u.nome||'(sem nome)')}</div><div class="faint">${esc(u.email||'')}</div></td>
+      <td><span class="pill ${cls}">${titulo}</span></td>
+      <td>${(u.unidades||[]).length ? (u.unidades||[]).map(nomeUn).join(', ') : '<span class="faint">nenhuma</span>'}</td>
+      <td style="font-size:13px;">${resumoAreas(u)}</td>
+      <td><button class="btn btn-sm ${st==='pendente'?'btn-primary':''}" data-acesso="${u.id}">${st==='pendente'?'Revisar':'Editar'}</button></td>
+    </tr>`).join('');
+    return `<section class="panel"><div class="panel-head">${titulo} <span class="muted" style="font-weight:400;font-size:13px;">${itens.length}</span></div>
+      <table><thead><tr><th>Técnico</th><th>Situação</th><th>Unidades</th><th>Áreas</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="5" class="faint" style="padding:16px;">Nenhum cadastro aguardando aprovação.</td></tr>'}</tbody></table></section>`;
+  }).join('');
+  return `<div class="muted" style="font-size:13px;margin-bottom:16px;max-width:720px;">O técnico cria a conta pela tela de login e fica aguardando aqui. Ao aprovar, você escolhe as unidades dele e o nível de acesso em cada área. Quem não está aprovado não vê nenhum dado.</div>${html}`;
+}
+function bindAcessos(){
+  document.querySelectorAll('[data-acesso]').forEach(b=>b.addEventListener('click', ()=>openAcessoModal(byId(S.usuarios, b.dataset.acesso))));
+}
+function openAcessoModal(u){
+  if(!u) return;
+  const unidades = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  openModal('Acesso de '+esc(u.nome||u.email||'técnico'), `
+    <div class="muted" style="font-size:13px;">${esc(u.email||'')}</div>
+    <div class="field"><label for="acStatus">Situação</label>
+      <select id="acStatus"><option value="pendente">Aguardando aprovação</option><option value="aprovado">Aprovado</option><option value="recusado">Recusado</option></select></div>
+    <div class="field"><label>Unidades vinculadas</label>
+      <div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;">
+        ${unidades.length ? unidades.map(x=>`<label style="display:flex;gap:8px;align-items:center;font-weight:400;color:var(--text);font-size:13px;"><input type="checkbox" data-ac-un="${x.id}" ${(u.unidades||[]).includes(x.id)?'checked':''}> ${esc(x.name)}</label>`).join('') : '<span class="faint">Nenhuma unidade cadastrada.</span>'}
+      </div></div>
+    <div class="field"><label>O que ele pode fazer em cada área</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <button type="button" class="btn btn-sm" data-ac-preset="ver">Tudo: só ver</button>
+        <button type="button" class="btn btn-sm" data-ac-preset="editar">Tudo: ver e editar</button>
+        <button type="button" class="btn btn-sm" data-ac-preset="nenhum">Limpar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;">
+        ${AREAS.map(([k,l])=>`<div><label for="ac_${k}" style="font-size:12px;">${l}</label><select id="ac_${k}" data-ac-area="${k}">${NIVEIS.map(([v,t])=>`<option value="${v}" ${((u.permissoes||{})[k]||'nenhum')===v?'selected':''}>${t}</option>`).join('')}</select></div>`).join('')}
+      </div></div>
+  `, `<button class="btn btn-danger" id="acDel" style="margin-right:auto;">Remover cadastro</button><button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar</button>`);
+  document.getElementById('acStatus').value = u.status || 'pendente';
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  document.querySelectorAll('[data-ac-preset]').forEach(b=>b.addEventListener('click', ()=>{
+    document.querySelectorAll('[data-ac-area]').forEach(sel=>{ sel.value = b.dataset.acPreset; });
+  }));
+  document.getElementById('acDel').addEventListener('click', async ()=>{
+    if(!confirm('Remover o cadastro de '+(u.nome||u.email)+'? Se ele entrar de novo, aparecerá como novo pedido.')) return;
+    if(await dbDelete('usuarios', u.id)){ closeModal(); toast('Cadastro removido.', 'ok'); }
+  });
+  document.getElementById('mSave').addEventListener('click', async ()=>{
+    const status = document.getElementById('acStatus').value;
+    const un = [...document.querySelectorAll('[data-ac-un]')].filter(c=>c.checked).map(c=>c.dataset.acUn);
+    const perm = {};
+    document.querySelectorAll('[data-ac-area]').forEach(sel=>{ if(sel.value!=='nenhum') perm[sel.dataset.acArea] = sel.value; });
+    if(status==='aprovado' && !un.length && !confirm('Nenhuma unidade vinculada: o técnico não verá dados. Salvar assim mesmo?')) return;
+    if(status==='aprovado' && !Object.keys(perm).length && !confirm('Nenhuma área liberada: o técnico só verá o painel vazio. Salvar assim mesmo?')) return;
+    if(await dbUpdate('usuarios', u.id, {status, unidades: un, permissoes: perm})){ closeModal(); toast('Acesso salvo.', 'ok'); }
+  });
 }
 
 /* ---------------- Visão geral (unit) ---------------- */
@@ -1854,7 +2139,7 @@ function renderMandatos(unit){
     return `<div class="card">
       <div class="row">
         <div>
-          <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</div>
+          <div class="row-title">${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}${m.gestao?` <span class="faint" style="font-weight:400;">· Gestão ${esc(m.gestao)}</span>`:''}</div>
           <div class="faint">${nMembers} membro(s)</div>
         </div>
         <div class="top-actions">
@@ -1969,7 +2254,7 @@ function renderDocumentos(unit){
         </div>
         <div class="top-actions">
           <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.subtitulo||d.name)}" data-token="${d.fromLink||''}">Abrir</button>
-          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
+          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}" data-area="${(d.kind==='ata'||d.fromLink)?'atas':'documentos'}">Excluir</button>
         </div>
       </div>`;
   };
@@ -2039,7 +2324,7 @@ function renderAtas(unit){
   const ataLine = d => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0;">
       <span><b>${esc(d.reuniaoTipo||'Ata')}</b> · ${d.reuniaoData?fmtDate(d.reuniaoData):'sem data'}${d.pauta?`<span class="faint"> · ${esc(d.pauta.length>60?d.pauta.slice(0,60)+'…':d.pauta)}</span>`:''}${d.fromLink?` <span class="pill pill-info">via link${d.enviadoPor?' · '+esc(d.enviadoPor):''}</span>`:''}</span>
       <button class="btn btn-sm" data-open-file="${d.assetId}" data-name="${esc(d.name)}" data-token="${d.fromLink||''}">Abrir</button>
-      <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Excluir</button>
+      <button class="btn btn-sm btn-danger" data-del-doc="${d.id}" data-area="${(d.kind==='ata'||d.fromLink)?'atas':'documentos'}">Excluir</button>
     </div>`;
   return `
   <div class="row" style="margin-bottom:8px; align-items:flex-start;">
@@ -2670,7 +2955,7 @@ function openImportTrainingsModal(unit){
     btn.disabled = true; btn.textContent = 'Importando…';
     let ok = 0, fail = 0;
     for(const r of valid){
-      const id = await dbAdd('trainings', {memberId:r.member.id, courseName:r.courseName, hours:r.hours||null, completionDate:r.completionDate, expiryDate:r.expiryDate||null});
+      const id = await dbAdd('trainings', {memberId:r.member.id, unitId:unit.id, courseName:r.courseName, hours:r.hours||null, completionDate:r.completionDate, expiryDate:r.expiryDate||null});
       if(id) ok++; else fail++;
     }
     closeModal();
@@ -2728,7 +3013,7 @@ function openGroupTrainingModal(unit){
     let ok = 0, dup = 0, fail = 0;
     for(const id of ids){
       if(trainingDuplicate(id, course, done)){ dup++; continue; }
-      const nid = await dbAdd('trainings', {memberId:id, courseName:course, hours, completionDate:done, expiryDate:expiry});
+      const nid = await dbAdd('trainings', {memberId:id, unitId:unit.id, courseName:course, hours, completionDate:done, expiryDate:expiry});
       if(nid) ok++; else fail++;
     }
     closeModal();
@@ -2769,7 +3054,7 @@ function openAtaModal(unit, presetMandateId, presetMonth){
     try{
       const res = await S.assets.upload(file);
       await dbAdd('documents', {
-        unitId: unit.id, mandateId: curM.id, kind:'ata', category:'Ata de reunião',
+        unitId: unit.id, mandateId: curM.id, kind:'ata', area:'atas', category:'Ata de reunião',
         name: 'Ata '+tipo.toLowerCase()+' — '+fmtDate(data),
         reuniaoTipo: tipo, reuniaoData: data, pauta,
         assetId: res.id, url: res.url||'', contentType: res.contentType, sizeBytes: res.sizeBytes,
@@ -2797,6 +3082,260 @@ function openSubtitulosModal(){
     if(!lista.length){ toast('Informe ao menos um subtítulo.', 'err'); return; }
     const ok = await dbSet('config', 'subtitulos', {lista});
     if(ok){ closeModal(); toast('Lista de subtítulos salva.', 'ok'); }
+  });
+}
+
+/* ---------------- Importação em massa: unidades, mandatos, membros e treinamentos (administrador) ---------------- */
+const CURSO_PADRAO = 'Curso básico de CIPA (NR-05)';
+
+async function readFileText(file){
+  const buf = await new Promise((res, rej)=>{
+    const r = new FileReader();
+    r.onload = ()=>res(r.result);
+    r.onerror = ()=>rej(new Error('Não foi possível ler o arquivo.'));
+    r.readAsArrayBuffer(file);
+  });
+  try{ return new TextDecoder('utf-8', {fatal:true}).decode(buf); }
+  catch(e){ return new TextDecoder('windows-1252').decode(buf); } // CSV salvo pelo Excel sem "UTF-8"
+}
+
+function downloadUnidadesTemplate(){
+  downloadCSVFile('modelo_importacao_unidades.csv',
+    'GESTÃO;DATA DA POSSE;DATA DO TREINAMENTO;UNIDADE;ENTIDADE;MATRÍCULA;NOME;FUNÇÃO;ELEITO / INDICADO;DEPARTAMENTO / GERÊNCIA',
+    '2026/2027;08/09/2026;04/09/2026;CASA DA INDUSTRIA;SENAI;12345;MARIA DA SILVA;ANALISTA II - ANALISTA ADMINISTRATIVO;ELEITO;GERHC');
+}
+
+function parseCSVUnidades(text){
+  const table = parseCSVTable(text);
+  if(!table.length) return {rows:[], faltando:['cabeçalho na primeira linha']};
+  const header = table[0].map(normHeaderKey);
+  const find = fn => header.findIndex(fn);
+  const idx = {
+    gestao: find(h=>h.startsWith('gest')),
+    posse: find(h=>h.includes('posse')),
+    treino: find(h=>h.includes('treinamento')),
+    unidade: find(h=>h.startsWith('unid')),
+    entidade: find(h=>h.startsWith('entid')),
+    matricula: find(h=>h.startsWith('matr')),
+    nome: find(h=>h.startsWith('nome')),
+    funcao: find(h=>h.startsWith('fun')),
+    tipo: find(h=>h.includes('eleito') || h.includes('indicado')),
+    setor: find(h=>h.startsWith('depart') || h.includes('gerenc') || h==='setor')
+  };
+  const nomes = {posse:'DATA DA POSSE', unidade:'UNIDADE', nome:'NOME', tipo:'ELEITO / INDICADO'};
+  const faltando = Object.keys(nomes).filter(k=>idx[k]<0).map(k=>nomes[k]);
+  const rows = [];
+  if(faltando.length) return {rows, faltando};
+  for(let i=1;i<table.length;i++){
+    const cells = table[i];
+    if(cells.every(c=>!c || !c.trim())) continue;
+    const get = k => idx[k]>=0 ? (cells[idx[k]]||'').trim() : '';
+    const errors = [];
+    const unidade = get('unidade'), entidade = get('entidade'), nome = get('nome');
+    if(!unidade) errors.push('unidade ausente');
+    if(!nome) errors.push('nome ausente');
+    const tipo = matchEnumValue(get('tipo'), IMPORT_TYPE_OPTIONS);
+    if(!tipo) errors.push('eleito/indicado inválido ("'+get('tipo')+'")');
+    const posse = parseFlexibleDate(get('posse'));
+    if(!posse) errors.push('data da posse ausente ou inválida');
+    const treinoRaw = get('treino');
+    const treino = treinoRaw ? parseFlexibleDate(treinoRaw) : null;
+    if(treinoRaw && !treino) errors.push('data do treinamento inválida');
+    rows.push({rowIndex:i+1, gestao:get('gestao'), posse, treino, unidade, entidade, matricula:get('matricula'), nome, funcao:get('funcao'), tipo, setor:get('setor'), errors});
+  }
+  return {rows, faltando:[]};
+}
+
+function consecutivoPrevio(unitId, start, name, matricula){
+  const prev = S.mandates.filter(m=>m.unitId===unitId && m.startDate < start).sort((a,b)=>b.startDate.localeCompare(a.startDate))[0];
+  if(!prev) return null;
+  const n = normStr(name), mat = normStr(matricula);
+  return S.members.find(mm=>mm.mandateId===prev.id && normStr(mm.name)===n && ((mat && normStr(mm.matricula)) ? normStr(mm.matricula)===mat : true)) || null;
+}
+
+const chaveNome = t => stripAccents(t||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const sobrepoe = (m, ini, fim) => !!m.startDate && !!m.endDate && m.startDate < fim && m.endDate > ini;
+
+function montarPlanoUnidades(rows){
+  const hoje = todayISO();
+  const grupos = new Map();
+  rows.filter(r=>!r.errors.length).forEach(r=>{
+    const nome = r.entidade ? r.unidade+' – '+r.entidade : r.unidade;
+    const k = chaveNome(nome);
+    if(!grupos.has(k)) grupos.set(k, {nome, base:r.unidade, gestoes:new Map()});
+    const g = grupos.get(k), gk = r.gestao || '(sem gestão)';
+    if(!g.gestoes.has(gk)) g.gestoes.set(gk, {gestao:r.gestao, rows:[]});
+    g.gestoes.get(gk).rows.push(r);
+  });
+  const plano = [];
+  grupos.forEach(g=>{
+    const existente = S.units.find(u=>chaveNome(u.name)===chaveNome(g.nome)) || null;
+    const baseK = chaveNome(g.base);
+    const parecida = (!existente && baseK.length>=4) ? (S.units.find(u=>{ const k = chaveNome(u.name); return k.length>=4 && (k.includes(baseK) || baseK.includes(k)); }) || null) : null;
+    const mandatos = [];
+    g.gestoes.forEach(gs=>{
+      const start = gs.rows.map(r=>r.posse).sort()[0];
+      const end = addYearsISO(start, 1);
+      const mExist = existente ? (S.mandates.find(m=>m.unitId===existente.id && m.startDate===start) || S.mandates.find(m=>m.unitId===existente.id && sobrepoe(m, start, end)) || null) : null;
+      const vistos = new Set(), membros = [];
+      gs.rows.forEach(r=>{
+        const mat = normStr(r.matricula);
+        const chave = mat || 'n:'+normStr(r.nome);
+        if(vistos.has(chave)) return;
+        vistos.add(chave);
+        const mem = mExist ? S.members.find(x=>x.mandateId===mExist.id && (mat ? normStr(x.matricula)===mat : chaveNome(x.name)===chaveNome(r.nome))) : null;
+        membros.push({r, existente: mem || null});
+      });
+      mandatos.push({gestao:gs.gestao, start, end, status: end<hoje ? 'encerrado' : 'ativo', existente:mExist, membros});
+    });
+    plano.push({nome:g.nome, existente, parecida, mandatos});
+  });
+  return plano.sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+
+function remendoMembro(ex, r){
+  const patch = {};
+  if(!ex.setor && r.setor) patch.setor = r.setor;
+  if(!ex.jobTitle && r.funcao) patch.jobTitle = r.funcao;
+  if(!ex.dataPosse && r.posse) patch.dataPosse = r.posse;
+  return patch;
+}
+
+function contarPlano(plano, opts){
+  const c = {unidades:0, mandatos:0, membros:0, treinos:0, completar:0};
+  plano.forEach(u=>{
+    if(!u.existente) c.unidades++;
+    u.mandatos.forEach(m=>{
+      if(!m.existente) c.mandatos++;
+      m.membros.forEach(mb=>{
+        if(!mb.existente) c.membros++;
+        else if(opts.completar && Object.keys(remendoMembro(mb.existente, mb.r)).length) c.completar++;
+        if(mb.r.treino && !(mb.existente && trainingDuplicate(mb.existente.id, opts.curso, mb.r.treino))) c.treinos++;
+      });
+    });
+  });
+  return c;
+}
+
+async function executarPlanoUnidades(plano, opts, onProgresso){
+  const res = {unidades:0, mandatos:0, membros:0, treinos:0, atualizados:0, falhas:0};
+  for(const u of plano){
+    let unitId = u.existente ? u.existente.id : null;
+    if(!unitId){
+      unitId = await dbAdd('units', {name:u.nome, cnpj:'', technicianId:null});
+      if(unitId) res.unidades++; else { res.falhas++; continue; }
+    }
+    for(const m of u.mandatos){
+      let mandateId = m.existente ? m.existente.id : null;
+      if(!mandateId){
+        mandateId = await dbAdd('mandates', {unitId, unitName:u.nome, startDate:m.start, endDate:m.end, status:m.status, gestao:m.gestao||''});
+        if(mandateId) res.mandatos++; else { res.falhas++; continue; }
+      }
+      const tarefas = m.membros.map(mb=>async()=>{
+        const r = mb.r;
+        let memberId = mb.existente ? mb.existente.id : null;
+        if(!memberId){
+          const consec = consecutivoPrevio(unitId, m.start, r.nome, r.matricula);
+          memberId = await dbAdd('members', {
+            unitId, mandateId, name:r.nome, matricula:r.matricula||'', setor:r.setor||'', jobTitle:r.funcao||'',
+            role:'Titular', type:r.tipo, representationType: r.tipo==='Eleito' ? 'Empregados' : 'Empregador',
+            dataPosse:r.posse, consecutiveAlert: !!consec
+          });
+          if(memberId) res.membros++; else { res.falhas++; return; }
+        }
+        if(mb.existente && opts.completar){
+          const patch = remendoMembro(mb.existente, r);
+          if(Object.keys(patch).length){
+            const ok = await dbUpdate('members', memberId, patch);
+            if(ok) res.atualizados++; else res.falhas++;
+          }
+        }
+        if(r.treino && !(mb.existente && trainingDuplicate(memberId, opts.curso, r.treino))){
+          const exp = opts.validadeAnos ? addYearsISO(r.treino, opts.validadeAnos) : null;
+          const tid = await dbAdd('trainings', {memberId, unitId, courseName:opts.curso, hours:opts.horas||null, completionDate:r.treino, expiryDate:exp});
+          if(tid) res.treinos++; else res.falhas++;
+        }
+      });
+      for(let i=0;i<tarefas.length;i+=15){
+        await Promise.all(tarefas.slice(i,i+15).map(f=>f()));
+        if(onProgresso) onProgresso(res);
+      }
+    }
+  }
+  return res;
+}
+
+function openImportUnidadesModal(){
+  if(!S.isAdmin){ toast('Só o administrador pode importar unidades.', 'err'); return; }
+  let rows = null, plano = null;
+  openModal('Importar unidades, mandatos, membros e treinamentos', `
+    <div class="hint">Use a sua planilha como está (salve como CSV). Colunas reconhecidas: GESTÃO, DATA DA POSSE, DATA DO TREINAMENTO, UNIDADE, ENTIDADE, MATRÍCULA, NOME, FUNÇÃO, ELEITO / INDICADO e DEPARTAMENTO / GERÊNCIA. Cada combinação de unidade e entidade vira uma unidade (uma CIPA). O mandato começa na data da posse e termina 1 ano depois, e todos entram como Titular. Eleito representa os empregados (com estabilidade); indicado representa o empregador. Dá para ajustar tudo depois.</div>
+    <div class="field"><label for="iuFile">Arquivo (.csv) *</label><input type="file" id="iuFile" accept=".csv,text/csv"></div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;color:var(--text);font-size:13px;margin:4px 0 10px;"><input type="checkbox" id="iuCompletar" checked style="margin-top:3px;"><span><b>Completar dados em branco dos membros já cadastrados</b> (setor, cargo e data da posse). O que já está preenchido não é alterado.</span></label>
+    <div class="field"><label for="iuCurso">Nome do curso do treinamento</label><input id="iuCurso" value="${esc(CURSO_PADRAO)}"></div>
+    <div class="field-row">
+      <div class="field"><label for="iuHoras">Carga horária (h, opcional)</label><input type="number" id="iuHoras" min="0"></div>
+      <div class="field"><label for="iuVal">Validade do certificado</label><select id="iuVal"><option value="0">Sem validade</option><option value="1">1 ano após o treinamento</option><option value="2">2 anos após o treinamento</option></select></div>
+    </div>
+    <div id="iuPreview"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mImport" disabled>Importar</button>`);
+  document.getElementById('mCancel').addEventListener('click', closeModal);
+  const box = document.getElementById('iuPreview'), btn = document.getElementById('mImport');
+  const opcoes = ()=>({
+    curso: document.getElementById('iuCurso').value.trim() || CURSO_PADRAO,
+    horas: Number(document.getElementById('iuHoras').value) || null,
+    validadeAnos: Number(document.getElementById('iuVal').value) || 0,
+    completar: document.getElementById('iuCompletar').checked
+  });
+
+  function desenhar(){
+    if(!plano) return;
+    const c = contarPlano(plano, opcoes());
+    const invalidas = rows.filter(r=>r.errors.length);
+    const total = c.unidades + c.mandatos + c.membros + c.treinos + c.completar;
+    const tabela = plano.map(u=>u.mandatos.map(m=>`<tr>
+      <td>${esc(u.nome)} ${u.existente?'<span class="pill pill-muted">já existe</span>'+(chaveNome(u.existente.name)===chaveNome(u.nome)&&u.existente.name!==u.nome?'<div class="faint">usa a cadastrada como "'+esc(u.existente.name)+'"</div>':''):'<span class="pill pill-ok">nova</span>'}${u.parecida?'<div class="faint" style="color:var(--warn);">Parecida com "'+esc(u.parecida.name)+'". Se for a mesma, cancele e renomeie a existente.</div>':''}</td>
+      <td>${esc(m.gestao||'—')}${m.existente?' <span class="pill pill-muted">mandato existente</span>':''}</td>
+      <td>${m.existente ? fmtDate(m.existente.startDate)+' – '+fmtDate(m.existente.endDate)+'<div class="faint">período já cadastrado, mantido</div>' : fmtDate(m.start)+' – '+fmtDate(m.end)}</td>
+      <td>${m.membros.length}${m.membros.some(x=>x.existente)?` <span class="faint">(${m.membros.filter(x=>x.existente).length} já cadastrados)</span>`:''}</td>
+    </tr>`).join('')).join('');
+    box.innerHTML = `
+      <div class="hint" style="margin:8px 0;"><b>Será criado:</b> ${c.unidades} unidade(s), ${c.mandatos} mandato(s), ${c.membros} membro(s) e ${c.treinos} treinamento(s).${c.completar?' Serão completados dados em branco de '+c.completar+' membro(s) já cadastrado(s).':''} O que já existe é mantido, então reimportar a mesma planilha não duplica nada.</div>
+      <div style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:8px;">
+        <table style="font-size:12px;"><thead><tr><th>Unidade</th><th>Gestão</th><th>Mandato</th><th>Membros</th></tr></thead><tbody>${tabela || '<tr><td colspan="4" class="faint" style="padding:12px;">Nenhuma linha válida.</td></tr>'}</tbody></table>
+      </div>
+      ${invalidas.length ? `<div class="alert-box warn" style="margin-top:10px;"><span>${ico('alerta')}</span><div class="txt"><b>${invalidas.length} linha(s) com problema serão ignoradas:</b><br>${invalidas.slice(0,8).map(r=>'Linha '+r.rowIndex+': '+esc(r.errors.join('; '))).join('<br>')}${invalidas.length>8?'<br>… e mais '+(invalidas.length-8):''}</div></div>` : ''}`;
+    btn.disabled = total===0;
+    btn.textContent = total ? 'Importar' : 'Nada a importar';
+  }
+  ['iuCurso','iuHoras','iuVal','iuCompletar'].forEach(id=>document.getElementById(id).addEventListener('input', desenhar));
+  document.getElementById('iuCompletar').addEventListener('change', desenhar);
+
+  document.getElementById('iuFile').addEventListener('change', async ()=>{
+    const f = document.getElementById('iuFile').files[0]; if(!f) return;
+    let text; try{ text = await readFileText(f); }catch(e){ toast('Não foi possível ler o arquivo.', 'err'); return; }
+    const out = parseCSVUnidades(text);
+    if(out.faltando.length){
+      rows = null; plano = null; btn.disabled = true;
+      box.innerHTML = `<div class="alert-box warn" style="margin-top:10px;"><span>${ico('alerta')}</span><div class="txt">Não encontrei estas colunas no arquivo: <b>${esc(out.faltando.join(', '))}</b>. Confira se o cabeçalho está na primeira linha e se o arquivo é um CSV.</div></div>`;
+      return;
+    }
+    rows = out.rows;
+    plano = montarPlanoUnidades(rows);
+    desenhar();
+  });
+
+  btn.addEventListener('click', async ()=>{
+    if(!plano || S._importando) return;
+    S._importando = true;
+    const o = opcoes();
+    btn.disabled = true; btn.textContent = 'Importando…';
+    let res;
+    try{
+      res = await executarPlanoUnidades(plano, o, r=>{ btn.textContent = 'Importando… ('+r.membros+' membros)'; });
+    }finally{ S._importando = false; }
+    closeModal();
+    toast(res.unidades+' unidade(s), '+res.mandatos+' mandato(s), '+res.membros+' membro(s) e '+res.treinos+' treinamento(s) importados.'+(res.atualizados?' '+res.atualizados+' membro(s) já cadastrado(s) completado(s).':'')+(res.falhas?' '+res.falhas+' falharam.':''), res.falhas ? 'err' : 'ok');
   });
 }
 
@@ -2873,7 +3412,7 @@ function openDocModal(unit, presetMandateId){
     try{
       const res = await S.assets.upload(file);
       await dbAdd('documents', {
-        unitId: unit.id, mandateId: mandateSel.value,
+        unitId: unit.id, mandateId: mandateSel.value, area: 'documentos',
         category: isCustom ? 'Outros documentos' : name,
         name, subtitulo: sub || null, arquivo: file.name,
         assetId: res.id, url: res.url||'', contentType: res.contentType, sizeBytes: res.sizeBytes,
@@ -2915,7 +3454,7 @@ function openTrainingModal(unit){
     const saveBtn = document.getElementById('mSave');
     saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
     const data = {
-      memberId, courseName,
+      memberId, courseName, unitId: unit.id,
       hours: Number(document.getElementById('fTrHours').value)||null,
       completionDate,
       expiryDate: document.getElementById('fTrExpiry').value || null
