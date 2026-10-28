@@ -311,7 +311,8 @@ const S = {
   user: null, isAdmin: false, perfil: null, usuarios: [], _buckets: {}, _perfilUnsub: null, _signupNome: null, _migrando: false, _migrFail: false,
   links: [], linkDocs: [], _linkAtas: {}, _linkSubs: {},
   _painelUnit: 'all',
-  _painelFiltro: 'all',
+  _painelFiltro: 'all', _painelEntidade: 'all', _painelTecnico: 'all', _painelTipo: 'all',
+  _memTipo: 'all', _memSetor: 'all', _memBusca: '',
   _relatorioTipo: 'geral',
   _relatorioUnitId: null,
   unsub: [],
@@ -1205,6 +1206,12 @@ function unitAtasPendentes(unit, am){
   return monthsOfMandate(am).filter(x=>x.key < cur && !keys.has(x.key)).length;
 }
 
+function inferirEntidade(nome){
+  const m = String(nome||'').toUpperCase().match(/\b(SESI|SENAI|IEL|FIEG)\b/g);
+  return m ? m[m.length-1] : '';
+}
+function entidadeDe(u){ return ((u.entidade||'').trim().toUpperCase()) || inferirEntidade(u.name); }
+
 function unitMetrics(unit){
   const am = activeMandate(unit.id);
   const members = am ? mandateMembers(am.id) : [];
@@ -1297,7 +1304,7 @@ function renderSidebar(){
     </div>`;
   }).join('');
   el.querySelectorAll('.unit-item').forEach(item=>{
-    item.addEventListener('click', ()=>{ S.currentUnitId = item.dataset.unit; S.currentTab='visao'; S._selMembers = {}; renderSidebar(); renderMain(); });
+    item.addEventListener('click', ()=>{ S.currentUnitId = item.dataset.unit; S.currentTab='visao'; S._selMembers = {}; S._memSetor = 'all'; renderSidebar(); renderMain(); });
   });
 }
 
@@ -1356,11 +1363,13 @@ async function maybeMigrate(){
   if(!S.isAdmin || S._migrando || S._migrFail) return;
   const trs = S.trainings.filter(t=>!t.unitId && byId(S.members, t.memberId));
   const docs = S.documents.filter(d=>!d.area);
-  if(!trs.length && !docs.length) return;
+  const uns = S.units.filter(u=>!u.entidade && inferirEntidade(u.name));
+  if(!trs.length && !docs.length && !uns.length) return;
   S._migrando = true;
   try{
     for(const t of trs) await S.db.doc('trainings/'+t.id).update({unitId: byId(S.members, t.memberId).unitId});
     for(const d of docs) await S.db.doc('documents/'+d.id).update({area: (d.kind==='ata') ? 'atas' : 'documentos'});
+    for(const u of uns) await S.db.doc('units/'+u.id).update({entidade: inferirEntidade(u.name)});
   }catch(e){ console.error('migração', e); S._migrFail = true; }
   S._migrando = false;
   S._migrRodadas = (S._migrRodadas || 0) + 1;
@@ -1514,27 +1523,44 @@ function renderGlobalDashboard(){
   if(S._painelUnit!=='all' && !byId(S.units, S._painelUnit)) S._painelUnit = 'all';
   const unitsSorted = S.units.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const todas = unitsSorted.map(unitMetrics);
-  const escopo = S._painelUnit==='all' ? todas : todas.filter(x=>x.unit.id===S._painelUnit);
+  if(S._painelTecnico!=='all' && S._painelTecnico!=='none' && !byId(S.technicians, S._painelTecnico)) S._painelTecnico = 'all';
+  const passaUn = x => S._painelUnit==='all' || x.unit.id===S._painelUnit;
+  const passaTec = x => S._painelTecnico==='all' || (S._painelTecnico==='none' ? !x.unit.technicianId : x.unit.technicianId===S._painelTecnico);
+  const passaEnt = x => { const e = entidadeDe(x.unit); return S._painelEntidade==='all' || (S._painelEntidade==='__none' ? !e : e===S._painelEntidade); };
+  const tipoSel = S._painelTipo;
+  const passaTipo = x => tipoSel==='all' || (tipoSel==='Eleito' ? x.eleitos : x.indicados) > 0;
+  const base = todas.filter(passaUn).filter(passaTec);
+  const escopo = base.filter(passaEnt);
   const filtro = PAINEL_FILTROS[S._painelFiltro] ? S._painelFiltro : 'all';
-  const visiveis = escopo.filter(PAINEL_FILTROS[filtro]);
+  const visiveis = escopo.filter(PAINEL_FILTROS[filtro]).filter(passaTipo);
 
   const cnt = f => escopo.filter(PAINEL_FILTROS[f]).length;
   const soma = k => escopo.reduce((n,x)=>n+x[k],0);
-  const cipeiros = escopo.reduce((n,x)=>n+x.members.length,0);
   const eleitos = soma('eleitos'), indicados = soma('indicados');
+  const cipeiros = tipoSel==='Eleito' ? eleitos : (tipoSel==='Indicado' ? indicados : escopo.reduce((n,x)=>n+x.members.length,0));
+  const nSesi = base.filter(x=>entidadeDe(x.unit)==='SESI').length;
+  const nSenai = base.filter(x=>entidadeDe(x.unit)==='SENAI').length;
   const atasPend = soma('atasPend'), unAtas = cnt('atas');
   const vencidos = soma('vencidos'), aVencer = soma('aVencer'), semTreino = soma('semTreino');
+  const veMembros = podeVer('membros') || podeVer('treinamentos');
 
+  const entidades = [...new Set(S.units.map(entidadeDe).filter(Boolean))].sort((a,b)=>{ const o = {SESI:0, SENAI:1}; return ((o[a]!==undefined?o[a]:9)-(o[b]!==undefined?o[b]:9)) || a.localeCompare(b); });
+  const haSemEnt = S.units.some(u=>!entidadeDe(u));
+  const tecIds = [...new Set(S.units.map(u=>u.technicianId).filter(Boolean))].filter(id=>byId(S.technicians, id)).sort((x,y)=>byId(S.technicians,x).name.localeCompare(byId(S.technicians,y).name));
+  const haSemTec = S.units.some(u=>!u.technicianId);
+  const algumFiltro = filtro!=='all' || S._painelEntidade!=='all' || S._painelTecnico!=='all' || S._painelTipo!=='all' || S._painelUnit!=='all';
+  const kpiF = (kind, valor, num, label, sub, on)=>`<button class="kpi${on?' on':''}" data-pf="${kind}:${valor}" aria-pressed="${on}"><div class="num">${num}</div><div class="label">${label}</div>${sub?`<div class="sub">${sub}</div>`:''}</button>`;
   const kpi = (f, num, label, sub, cor)=>{
     const on = filtro===f;
     return `<button class="kpi${on?' on':''}" data-filtro="${f}" aria-pressed="${on}"><div class="num" style="color:${cor}">${num}</div><div class="label">${label}</div>${sub?`<div class="sub">${sub}</div>`:''}</button>`;
   };
   const nUn = escopo.length;
-  const alerts = computeAllAlerts().filter(a=>a.unit && (S._painelUnit==='all' || a.unit.id===S._painelUnit))
+  const idsEscopo = new Set(escopo.map(x=>x.unit.id));
+  const alerts = computeAllAlerts().filter(a=>a.unit && idsEscopo.has(a.unit.id))
     .sort((a,b)=>(a.level==='danger'?0:1)-(b.level==='danger'?0:1));
   const attention = alerts.length
     ? alerts.slice(0,8).map(attentionRowHtml).join('') + (alerts.length>8 ? `<div class="lrow"><span></span><div class="s">+ ${alerts.length-8} outro(s) — abra a unidade para ver todos</div><span></span></div>` : '')
-    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${S._painelUnit==='all'?' nas unidades':' nesta unidade'}.</div><span></span></div>`;
+    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${escopo.length===todas.length?' nas unidades':' neste filtro'}.</div><span></span></div>`;
 
   const pendU = S.isAdmin ? S.usuarios.filter(u=>u.status==='pendente') : [];
   const pendRow = pendU.length ? `<div class="lrow"><span class="pill pill-warn" style="justify-self:start;">Acesso</span><div><div class="t">${pendU.length} cadastro(s) aguardando aprovação</div><div class="s">${esc(pendU.slice(0,3).map(u=>u.nome||u.email).join(', '))}${pendU.length>3?'…':''}</div></div><div><button class="btn btn-primary" data-go-acessos="1">Revisar</button></div></div>` : '';
@@ -1544,10 +1570,10 @@ function renderGlobalDashboard(){
     const trCel = (x.vencidos ? `<span class="pill pill-danger">${x.vencidos} vencido(s)</span>` : (x.aVencer ? `<span class="pill pill-warn">${x.aVencer} a vencer</span>` : '<span class="pill pill-ok">Em dia</span>'))
       + (x.semTreino ? `<div class="faint" style="margin-top:2px;">${x.semTreino} sem treinamento</div>` : '');
     return `<tr>
-      <td><b>${esc(u.name)}</b></td>
+      <td><b>${esc(u.name)}</b><div class="faint">${entidadeDe(u)?esc(entidadeDe(u)):'sem entidade'} · ${(byId(S.technicians,u.technicianId)||{}).name ? 'Técnico: '+esc(byId(S.technicians,u.technicianId).name) : 'sem técnico'}</div></td>
       <td>${estadoPill(x)}${x.motivos.length?`<div class="faint" style="margin-top:2px;">${esc(x.motivos.join(' · '))}</div>`:''}</td>
       <td>${am ? fmtDate(am.startDate)+' – '+fmtDate(am.endDate) : '<span class="faint">sem mandato</span>'}</td>
-      <td>${x.members.length}<div class="faint">${x.eleitos} eleitos · ${x.indicados} indicados</div></td>
+      <td>${tipoSel==='Eleito'?x.eleitos:(tipoSel==='Indicado'?x.indicados:x.members.length)}<div class="faint">${x.eleitos} eleitos · ${x.indicados} indicados</div></td>
       <td>${atasCel}</td>
       <td>${trCel}</td>
       <td><button class="btn btn-sm" data-open-unit="${u.id}">Abrir</button></td>
@@ -1556,14 +1582,27 @@ function renderGlobalDashboard(){
 
   return `
   <div class="filtro-bar">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <label for="fPainelUnit" style="font-weight:600;font-size:13px;">Visualizar</label>
-      <select id="fPainelUnit"><option value="all">Todas as unidades (geral)</option>${unitsSorted.map(u=>`<option value="${u.id}" ${u.id===S._painelUnit?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+      <div><label for="fPainelUnit" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Unidade</label>
+        <select id="fPainelUnit" style="min-width:200px;"><option value="all">Todas (geral)</option>${unitsSorted.map(u=>`<option value="${u.id}" ${u.id===S._painelUnit?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div>
+      <div><label for="fPainelEnt" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Entidade</label>
+        <select id="fPainelEnt" style="min-width:140px;"><option value="all">Todas</option>${entidades.map(e=>`<option value="${esc(e)}" ${S._painelEntidade===e?'selected':''}>${esc(e)}</option>`).join('')}${haSemEnt?`<option value="__none" ${S._painelEntidade==='__none'?'selected':''}>Sem entidade</option>`:''}</select></div>
+      <div><label for="fPainelTec" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Técnico</label>
+        <select id="fPainelTec" style="min-width:180px;"><option value="all">Todos</option>${tecIds.map(id=>`<option value="${id}" ${S._painelTecnico===id?'selected':''}>${esc(byId(S.technicians,id).name)}</option>`).join('')}${haSemTec?`<option value="none" ${S._painelTecnico==='none'?'selected':''}>Sem técnico definido</option>`:''}</select></div>
+      <div><label for="fPainelTipo" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Membros</label>
+        <select id="fPainelTipo" style="min-width:150px;"><option value="all">Todos</option><option value="Eleito" ${tipoSel==='Eleito'?'selected':''}>Só eleitos</option><option value="Indicado" ${tipoSel==='Indicado'?'selected':''}>Só indicados</option></select></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      ${filtro!=='all' ? `<span class="pill pill-info">Filtro: ${PAINEL_FILTRO_NOMES[filtro]}</span><button class="btn" id="btnLimparFiltro">Limpar filtro</button>` : ''}
+      ${filtro!=='all' ? `<span class="pill pill-info">Situação: ${PAINEL_FILTRO_NOMES[filtro]}</span>` : ''}
+      ${algumFiltro ? `<button class="btn" id="btnLimparFiltro">Limpar filtros</button>` : ''}
       ${S.isAdmin ? `<button class="btn" id="btnTemplateUnidades">${ico('download')}Baixar modelo</button><button class="btn" id="btnImportUnidades">${ico('upload')}Importar unidades</button>` : ''}
     </div>
+  </div>
+  <div class="kpis" style="margin-bottom:12px;">
+    ${kpiF('entidade','SESI', nSesi, 'CIPAs SESI', 'unidades da entidade SESI', S._painelEntidade==='SESI')}
+    ${kpiF('entidade','SENAI', nSenai, 'CIPAs SENAI', 'unidades da entidade SENAI', S._painelEntidade==='SENAI')}
+    ${kpiF('tipo','Eleito', veMembros?eleitos:'—', 'Eleitos', 'representam os empregados', tipoSel==='Eleito')}
+    ${kpiF('tipo','Indicado', veMembros?indicados:'—', 'Indicados', 'representam o empregador', tipoSel==='Indicado')}
   </div>
   <div class="kpis k3">
     ${kpi('regular', cnt('regular'), 'Regulares', 'de '+nUn+' unidade(s)', 'var(--ok)')}
@@ -1572,7 +1611,7 @@ function renderGlobalDashboard(){
   </div>
   <div class="hint" style="margin:0 0 12px;">Irregular: mandato vencido ou sem renovação no prazo, ata pendente ou certificado vencido. Em renovação: processo eleitoral em andamento e sem irregularidade. Regular: as demais.</div>
   <div class="kpis k3">
-    <div class="kpi"><div class="num">${(podeVer('membros')||podeVer('treinamentos'))?cipeiros:'—'}</div><div class="label">Cipeiros no mandato atual</div><div class="sub">${eleitos} eleitos · ${indicados} indicados</div></div>
+    <div class="kpi"><div class="num">${veMembros?cipeiros:'—'}</div><div class="label">${tipoSel==='Eleito'?'Eleitos':(tipoSel==='Indicado'?'Indicados':'Cipeiros')} no mandato atual</div><div class="sub">${eleitos} eleitos · ${indicados} indicados</div></div>
     ${kpi('atas', podeVer('atas')?atasPend:'—', 'Atas pendentes', 'meses sem ata, em '+unAtas+' unidade(s)', atasPend?'var(--danger)':'var(--text)')}
     ${kpi('cert', podeVer('treinamentos')?vencidos:'—', 'Certificados vencidos', aVencer+' a vencer em 45 dias · '+semTreino+' membro(s) sem treinamento', vencidos?'var(--danger)':'var(--text)')}
   </div>
@@ -1595,12 +1634,18 @@ function bindGlobalDashboard(){
     renderMain();
   }));
   document.querySelectorAll('[data-go-acessos]').forEach(b=>b.addEventListener('click', ()=>{ S.currentUnitId = null; S.globalView = 'acessos'; renderSidebar(); renderMain(); }));
-  const sel = document.getElementById('fPainelUnit');
-  if(sel) sel.addEventListener('change', ()=>{ S._painelUnit = sel.value; renderMain(); });
+  const ligar = (id, chave)=>{ const el = document.getElementById(id); if(el) el.addEventListener('change', ()=>{ S[chave] = el.value; renderMain(); }); };
+  ligar('fPainelUnit','_painelUnit'); ligar('fPainelEnt','_painelEntidade'); ligar('fPainelTec','_painelTecnico'); ligar('fPainelTipo','_painelTipo');
+  document.querySelectorAll('[data-pf]').forEach(b=>b.addEventListener('click', ()=>{
+    const [kind, valor] = b.dataset.pf.split(':');
+    const chave = kind==='entidade' ? '_painelEntidade' : '_painelTipo';
+    S[chave] = (S[chave]===valor) ? 'all' : valor;
+    renderMain();
+  }));
   const bImp = document.getElementById('btnImportUnidades'); if(bImp) bImp.addEventListener('click', openImportUnidadesModal);
   const bTpl = document.getElementById('btnTemplateUnidades'); if(bTpl) bTpl.addEventListener('click', downloadUnidadesTemplate);
   const lim = document.getElementById('btnLimparFiltro');
-  if(lim) lim.addEventListener('click', ()=>{ S._painelFiltro = 'all'; renderMain(); });
+  if(lim) lim.addEventListener('click', ()=>{ S._painelFiltro = 'all'; S._painelEntidade = 'all'; S._painelTecnico = 'all'; S._painelTipo = 'all'; S._painelUnit = 'all'; renderMain(); });
   const btn = document.getElementById('btnAddUnitEmpty');
   if(btn) btn.addEventListener('click', ()=>openUnitModal());
 }
@@ -1959,6 +2004,7 @@ function renderVisaoGeral(unit){
     <div class="side-col">
       <section class="card">
         <h3>Dados da unidade</h3>
+        <div class="lbl-s">Entidade</div><div style="margin-bottom:14px;">${entidadeDe(unit) ? esc(entidadeDe(unit)) : '<span class="faint">não informada</span>'}</div>
         <div class="lbl-s">CNPJ</div><div style="margin-bottom:14px;">${unit.cnpj? esc(unit.cnpj) : '<span class="faint">não informado</span>'}</div>
         <div class="lbl-s">Técnico responsável</div>
         ${tech ? `<div style="font-weight:500;">${esc(tech.name)}</div><div class="muted" style="font-size:13px;">${esc(tech.type||'')}${tech.registrationNumber?' · '+esc(tech.registrationNumber):''}</div>${tech.contact?`<div class="muted" style="font-size:13px;">${esc(tech.contact)}</div>`:''}`
@@ -2143,7 +2189,7 @@ function renderMandatos(unit){
           <div class="faint">${nMembers} membro(s)</div>
         </div>
         <div class="top-actions">
-          ${ra? `<span class="pill ${raPillCls(ra)}">${ra.label}</span>` : (isCur ? `<span class="pill pill-ok">Em dia</span>` : `<span class="pill pill-muted">Encerrada</span>`)}
+          ${ra? `<span class="pill ${raPillCls(ra)}">${ra.label}</span>` : (isCur ? `<span class="pill pill-ok">Em dia</span>` : ((m.endDate < todayISO() || m.status==='encerrado') ? `<span class="pill pill-muted">Encerrada</span>` : `<span class="pill pill-warn" title="Há outro mandato da mesma unidade no mesmo período">Sobreposto</span>`))}
           <button class="btn btn-sm" data-edit-mandate="${m.id}">Editar</button>
           <button class="btn btn-sm btn-danger" data-del-mandate="${m.id}">Excluir</button>
         </div>
@@ -2160,6 +2206,13 @@ function selectedMemberIds(unit){
   return Object.keys(S._selMembers).filter(id=>{ if(!S._selMembers[id]) return false; const m = byId(S.members, id); return m && m.unitId===unit.id; });
 }
 
+function filtrarMembros(lista){
+  const t = S._memTipo||'all', st = S._memSetor||'all', raw = (S._memBusca||'').trim().toLowerCase(), q = chaveNome(S._memBusca||'');
+  return lista.filter(m=>(t==='all' || m.type===t)
+    && (st==='all' || (st==='__none' ? !m.setor : m.setor===st))
+    && (!raw || chaveNome(m.name).includes(q) || (m.matricula||'').toLowerCase().includes(raw)));
+}
+
 function renderMembros(unit){
   const mandates = unitMandates(unit.id);
   if(mandates.length===0){
@@ -2167,6 +2220,20 @@ function renderMembros(unit){
   }
   const defaultMandate = activeMandate(unit.id) || mandates[0];
   const nSel = selectedMemberIds(unit).length;
+  const setores = [...new Set(unitMembersAll(unit.id).map(x=>x.setor).filter(Boolean))].sort();
+  const haSemSetor = unitMembersAll(unit.id).some(x=>!x.setor);
+  const fAtivo = (S._memTipo||'all')!=='all' || (S._memSetor||'all')!=='all' || (S._memBusca||'').trim()!=='';
+  const filtrosHtml = `<div class="filtro-bar" style="margin:12px 0 4px;">
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+      <div><label for="memTipo" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Tipo</label>
+        <select id="memTipo" style="min-width:150px;"><option value="all">Todos</option><option value="Eleito" ${S._memTipo==='Eleito'?'selected':''}>Só eleitos</option><option value="Indicado" ${S._memTipo==='Indicado'?'selected':''}>Só indicados</option></select></div>
+      <div><label for="memSetor" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Setor</label>
+        <select id="memSetor" style="min-width:180px;"><option value="all">Todos</option>${setores.map(x=>`<option value="${esc(x)}" ${S._memSetor===x?'selected':''}>${esc(x)}</option>`).join('')}${haSemSetor?`<option value="__none" ${S._memSetor==='__none'?'selected':''}>Sem setor</option>`:''}</select></div>
+      <div><label for="memBusca" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Buscar</label>
+        <input id="memBusca" type="search" placeholder="Nome ou matrícula" value="${esc(S._memBusca||'')}" style="height:40px;padding:0 10px;border:1px solid #cbd2da;border-radius:8px;background:var(--surface);color:var(--text);font:inherit;min-width:220px;"></div>
+    </div>
+    ${fAtivo ? `<button class="btn" id="memLimpar">Limpar filtros</button>` : ''}
+  </div>`;
   return `
   <div class="row" style="margin-bottom:8px; align-items:flex-start;">
     <div>
@@ -2180,20 +2247,22 @@ function renderMembros(unit){
       <button class="btn btn-primary" id="btnNewMember" data-mandate="${defaultMandate.id}">${ico('plus')}Novo membro</button>
     </div>
   </div>
+  ${filtrosHtml}
   <div style="height:12px;"></div>
   ${mandates.map(m=>{
-    const members = mandateMembers(m.id);
+    const todosDaGestao = mandateMembers(m.id);
+    const members = filtrarMembros(todosDaGestao);
     const isCurrent = defaultMandate.id===m.id;
     const expanded = S._expandedMandates[m.id]!==undefined ? S._expandedMandates[m.id] : isCurrent;
     const allSel = members.length>0 && members.every(mm=>S._selMembers[mm.id]);
     const head = `<div class="panel-head">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</span>${isCurrent?'<span class="pill pill-info">Gestão atual</span>':'<span class="pill pill-muted">Encerrada</span>'}</div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span class="muted" style="font-weight:400;font-size:13px;">${members.length} membro(s)</span>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span class="muted" style="font-weight:400;font-size:13px;">${members.length}${fAtivo?' de '+todosDaGestao.length:''} membro(s)</span>
           ${expanded ? `<button class="btn btn-sm" data-add-member-mandate="${m.id}">${ico('plus')}Adicionar</button>` : ''}
           <button class="btn btn-sm" data-toggle-mandate="${m.id}">${expanded?'Ocultar':'Ver membros'}</button></div>
       </div>`;
     const body = expanded ? `<table><thead><tr><th style="width:40px;"><input type="checkbox" data-sel-all="${m.id}" ${allSel?'checked':''} ${members.length?'':'disabled'} aria-label="Selecionar todos desta gestão"></th><th>Nome</th><th>Setor</th><th>Função</th><th>Tipo</th><th>Representação</th><th>Posse</th><th>Estabilidade</th><th></th></tr></thead><tbody>
-      ${members.length===0 ? `<tr><td colspan="9" class="faint" style="padding:16px;text-align:center;">Nenhum membro nesta gestão.</td></tr>` :
+      ${members.length===0 ? `<tr><td colspan="9" class="faint" style="padding:16px;text-align:center;">${fAtivo?'Nenhum membro neste filtro.':'Nenhum membro nesta gestão.'}</td></tr>` :
       members.map(mm=>`<tr${mm.consecutiveAlert?' style="background:var(--warn-soft);"':''}>
         <td><input type="checkbox" data-sel-member="${mm.id}" ${S._selMembers[mm.id]?'checked':''} aria-label="Selecionar ${esc(mm.name)}"></td>
         <td><div style="font-weight:500;">${esc(mm.name)}${mm.consecutiveAlert?' <span class="pill pill-warn" style="margin-left:6px;">2º mandato?</span>':''}</div>${mm.matricula?`<div class="faint">Matrícula ${esc(mm.matricula)}</div>`:''}</td>
@@ -2463,10 +2532,19 @@ function bindTabEvents(unit){
     S._selMembers[el.dataset.selMember] = el.checked; renderMain();
   }));
   document.querySelectorAll('[data-sel-all]').forEach(el=>el.addEventListener('change', ()=>{
-    mandateMembers(el.dataset.selAll).forEach(mm=>{ S._selMembers[mm.id] = el.checked; });
+    filtrarMembros(mandateMembers(el.dataset.selAll)).forEach(mm=>{ S._selMembers[mm.id] = el.checked; });
     renderMain();
   }));
   b('#btnClearSel', ()=>{ S._selMembers = {}; renderMain(); });
+  const mt = document.getElementById('memTipo'); if(mt) mt.addEventListener('change', ()=>{ S._memTipo = mt.value; S._selMembers = {}; renderMain(); });
+  const ms = document.getElementById('memSetor'); if(ms) ms.addEventListener('change', ()=>{ S._memSetor = ms.value; S._selMembers = {}; renderMain(); });
+  const mb = document.getElementById('memBusca');
+  if(mb) mb.addEventListener('input', ()=>{
+    S._memBusca = mb.value; S._selMembers = {}; renderMain();
+    const novo = document.getElementById('memBusca');
+    if(novo){ novo.focus(); novo.setSelectionRange(novo.value.length, novo.value.length); }
+  });
+  const ml = document.getElementById('memLimpar'); if(ml) ml.addEventListener('click', ()=>{ S._memTipo = 'all'; S._memSetor = 'all'; S._memBusca = ''; S._selMembers = {}; renderMain(); });
   b('#btnBulkDelMembers', async ()=>{
     const ids = selectedMemberIds(unit);
     if(!ids.length) return;
@@ -2577,6 +2655,7 @@ function openUnitModal(unit){
   const draft = {
     name: unit ? unit.name : '',
     cnpj: unit ? (unit.cnpj||'') : '',
+    entidade: unit ? entidadeDe(unit) : '',
     technicianId: unit ? (unit.technicianId||'') : ''
   };
   let addingTech = false;
@@ -2585,6 +2664,8 @@ function openUnitModal(unit){
     const n = document.getElementById('fUnitName');
     const c = document.getElementById('fUnitCnpj');
     const t = document.getElementById('fUnitTech');
+    const en = document.getElementById('fUnitEntidade');
+    if(en) draft.entidade = en.value.trim().toUpperCase();
     if(n) draft.name = n.value.trim();
     if(c) draft.cnpj = c.value.trim();
     if(t) draft.technicianId = t.value;
@@ -2594,6 +2675,7 @@ function openUnitModal(unit){
     return `
     <div class="field"><label>Nome da unidade *</label><input id="fUnitName" placeholder="Ex: FIEG – Unidade Setor Norte" value="${esc(draft.name)}"></div>
     <div class="field"><label>CNPJ (opcional)</label><input id="fUnitCnpj" placeholder="00.000.000/0000-00" value="${esc(draft.cnpj)}"></div>
+    <div class="field"><label for="fUnitEntidade">Entidade</label><input id="fUnitEntidade" list="entidadesList" placeholder="SESI, SENAI..." value="${esc(draft.entidade)}"><datalist id="entidadesList"><option value="SESI"></option><option value="SENAI"></option><option value="IEL"></option><option value="FIEG"></option></datalist><div class="hint">Usada nos filtros e indicadores do Painel.</div></div>
     <div class="field">
       <label>Técnico responsável</label>
       <div style="display:flex; gap:6px;">
@@ -2651,7 +2733,7 @@ function openUnitModal(unit){
       document.getElementById('mSave').addEventListener('click', async ()=>{
         captureDraft();
         if(!draft.name){ toast('Informe o nome da unidade.', 'err'); return; }
-        const data = {name: draft.name, cnpj: draft.cnpj, technicianId: draft.technicianId||null};
+        const data = {name: draft.name, cnpj: draft.cnpj, entidade: draft.entidade||'', technicianId: draft.technicianId||null};
         let ok;
         if(unit) ok = await dbUpdate('units', unit.id, data);
         else { const id = await dbAdd('units', data); ok = !!id; if(id) S.currentUnitId = id; }
@@ -3156,29 +3238,45 @@ function consecutivoPrevio(unitId, start, name, matricula){
 const chaveNome = t => stripAccents(t||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const sobrepoe = (m, ini, fim) => !!m.startDate && !!m.endDate && m.startDate < fim && m.endDate > ini;
 
+function modaTexto(lista){
+  const cont = {};
+  lista.forEach(t=>{ cont[t] = (cont[t]||0)+1; });
+  return Object.keys(cont).sort((x,y)=>cont[y]-cont[x])[0] || '';
+}
+
+// Um mandato por CIPA (unidade + entidade). O texto da coluna GESTÃO é só etiqueta. Só abre outro mandato
+// se houver mais de 180 dias entre as datas de posse (ex.: planilha com gestões de anos diferentes).
 function montarPlanoUnidades(rows){
   const hoje = todayISO();
   const grupos = new Map();
   rows.filter(r=>!r.errors.length).forEach(r=>{
     const nome = r.entidade ? r.unidade+' – '+r.entidade : r.unidade;
     const k = chaveNome(nome);
-    if(!grupos.has(k)) grupos.set(k, {nome, base:r.unidade, gestoes:new Map()});
-    const g = grupos.get(k), gk = r.gestao || '(sem gestão)';
-    if(!g.gestoes.has(gk)) g.gestoes.set(gk, {gestao:r.gestao, rows:[]});
-    g.gestoes.get(gk).rows.push(r);
+    if(!grupos.has(k)) grupos.set(k, {nome, base:r.unidade, rows:[]});
+    grupos.get(k).rows.push(r);
   });
   const plano = [];
   grupos.forEach(g=>{
     const existente = S.units.find(u=>chaveNome(u.name)===chaveNome(g.nome)) || null;
     const baseK = chaveNome(g.base);
     const parecida = (!existente && baseK.length>=4) ? (S.units.find(u=>{ const k = chaveNome(u.name); return k.length>=4 && (k.includes(baseK) || baseK.includes(k)); }) || null) : null;
-    const mandatos = [];
-    g.gestoes.forEach(gs=>{
-      const start = gs.rows.map(r=>r.posse).sort()[0];
+    const ordenadas = g.rows.slice().sort((a,b)=>a.posse.localeCompare(b.posse));
+    const blocos = [];
+    ordenadas.forEach(r=>{
+      const ult = blocos[blocos.length-1];
+      if(!ult || daysBetween(ult.ultimaPosse, r.posse) > 180){ blocos.push({rows:[], ultimaPosse:r.posse}); }
+      const bl = blocos[blocos.length-1];
+      bl.rows.push(r); bl.ultimaPosse = r.posse;
+    });
+    const mandatos = blocos.map(bl=>{
+      const start = bl.rows[0].posse;
       const end = addYearsISO(start, 1);
+      const etiquetas = bl.rows.map(r=>r.gestao).filter(Boolean);
+      const gestao = modaTexto(etiquetas);
+      const outras = [...new Set(etiquetas)].filter(t=>t!==gestao);
       const mExist = existente ? (S.mandates.find(m=>m.unitId===existente.id && m.startDate===start) || S.mandates.find(m=>m.unitId===existente.id && sobrepoe(m, start, end)) || null) : null;
       const vistos = new Set(), membros = [];
-      gs.rows.forEach(r=>{
+      bl.rows.forEach(r=>{
         const mat = normStr(r.matricula);
         const chave = mat || 'n:'+normStr(r.nome);
         if(vistos.has(chave)) return;
@@ -3186,9 +3284,9 @@ function montarPlanoUnidades(rows){
         const mem = mExist ? S.members.find(x=>x.mandateId===mExist.id && (mat ? normStr(x.matricula)===mat : chaveNome(x.name)===chaveNome(r.nome))) : null;
         membros.push({r, existente: mem || null});
       });
-      mandatos.push({gestao:gs.gestao, start, end, status: end<hoje ? 'encerrado' : 'ativo', existente:mExist, membros});
+      return {gestao, outras, start, end, status: end<hoje ? 'encerrado' : 'ativo', existente:mExist, membros};
     });
-    plano.push({nome:g.nome, existente, parecida, mandatos});
+    plano.push({nome:g.nome, entidade:(g.rows[0].entidade||'').toUpperCase(), existente, parecida, mandatos});
   });
   return plano.sort((a,b)=>a.nome.localeCompare(b.nome));
 }
@@ -3222,9 +3320,10 @@ async function executarPlanoUnidades(plano, opts, onProgresso){
   for(const u of plano){
     let unitId = u.existente ? u.existente.id : null;
     if(!unitId){
-      unitId = await dbAdd('units', {name:u.nome, cnpj:'', technicianId:null});
+      unitId = await dbAdd('units', {name:u.nome, cnpj:'', entidade:u.entidade||'', technicianId:null});
       if(unitId) res.unidades++; else { res.falhas++; continue; }
     }
+    if(u.existente && !u.existente.entidade && u.entidade) await dbUpdate('units', unitId, {entidade:u.entidade});
     for(const m of u.mandatos){
       let mandateId = m.existente ? m.existente.id : null;
       if(!mandateId){
@@ -3295,7 +3394,7 @@ function openImportUnidadesModal(){
     const total = c.unidades + c.mandatos + c.membros + c.treinos + c.completar;
     const tabela = plano.map(u=>u.mandatos.map(m=>`<tr>
       <td>${esc(u.nome)} ${u.existente?'<span class="pill pill-muted">já existe</span>'+(chaveNome(u.existente.name)===chaveNome(u.nome)&&u.existente.name!==u.nome?'<div class="faint">usa a cadastrada como "'+esc(u.existente.name)+'"</div>':''):'<span class="pill pill-ok">nova</span>'}${u.parecida?'<div class="faint" style="color:var(--warn);">Parecida com "'+esc(u.parecida.name)+'". Se for a mesma, cancele e renomeie a existente.</div>':''}</td>
-      <td>${esc(m.gestao||'—')}${m.existente?' <span class="pill pill-muted">mandato existente</span>':''}</td>
+      <td>${esc(m.gestao||'—')}${m.outras&&m.outras.length?'<div class="faint" style="color:var(--warn);">também aparece: '+esc(m.outras.join(', '))+' (tratados como a mesma gestão)</div>':''}${m.existente?' <span class="pill pill-muted">mandato existente</span>':''}</td>
       <td>${m.existente ? fmtDate(m.existente.startDate)+' – '+fmtDate(m.existente.endDate)+'<div class="faint">período já cadastrado, mantido</div>' : fmtDate(m.start)+' – '+fmtDate(m.end)}</td>
       <td>${m.membros.length}${m.membros.some(x=>x.existente)?` <span class="faint">(${m.membros.filter(x=>x.existente).length} já cadastrados)</span>`:''}</td>
     </tr>`).join('')).join('');
