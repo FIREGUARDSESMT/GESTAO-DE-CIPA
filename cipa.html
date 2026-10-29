@@ -1529,18 +1529,20 @@ function renderGlobalDashboard(){
   const passaEnt = x => { const e = entidadeDe(x.unit); return S._painelEntidade==='all' || (S._painelEntidade==='__none' ? !e : e===S._painelEntidade); };
   const tipoSel = S._painelTipo;
   const passaTipo = x => tipoSel==='all' || (tipoSel==='Eleito' ? x.eleitos : x.indicados) > 0;
-  const base = todas.filter(passaUn).filter(passaTec);
-  const escopo = base.filter(passaEnt);
+  // "escopo" = unidades que passam em todos os filtros, menos a situação (regular/renovação/irregular).
+  // "visiveis" = o escopo já filtrado também pela situação. Os indicadores usam "visiveis", então todos acompanham os filtros.
+  const escopo = todas.filter(passaUn).filter(passaTec).filter(passaEnt).filter(passaTipo);
   const filtro = PAINEL_FILTROS[S._painelFiltro] ? S._painelFiltro : 'all';
-  const visiveis = escopo.filter(PAINEL_FILTROS[filtro]).filter(passaTipo);
+  const visiveis = escopo.filter(PAINEL_FILTROS[filtro]);
 
-  const cnt = f => escopo.filter(PAINEL_FILTROS[f]).length;
-  const soma = k => escopo.reduce((n,x)=>n+x[k],0);
-  const eleitos = soma('eleitos'), indicados = soma('indicados');
-  const cipeiros = tipoSel==='Eleito' ? eleitos : (tipoSel==='Indicado' ? indicados : escopo.reduce((n,x)=>n+x.members.length,0));
-  const nSesi = base.filter(x=>entidadeDe(x.unit)==='SESI').length;
-  const nSenai = base.filter(x=>entidadeDe(x.unit)==='SENAI').length;
-  const atasPend = soma('atasPend'), unAtas = cnt('atas');
+  const cnt = f => escopo.filter(PAINEL_FILTROS[f]).length;   // distribuição por situação: não muda ao clicar numa situação
+  const soma = k => visiveis.reduce((n,x)=>n+x[k],0);
+  const eleitos = tipoSel==='Indicado' ? 0 : soma('eleitos');
+  const indicados = tipoSel==='Eleito' ? 0 : soma('indicados');
+  const cipeiros = tipoSel==='all' ? visiveis.reduce((n,x)=>n+x.members.length,0) : eleitos + indicados;
+  const nSesi = visiveis.filter(x=>entidadeDe(x.unit)==='SESI').length;
+  const nSenai = visiveis.filter(x=>entidadeDe(x.unit)==='SENAI').length;
+  const atasPend = soma('atasPend'), unAtas = visiveis.filter(PAINEL_FILTROS.atas).length;
   const vencidos = soma('vencidos'), aVencer = soma('aVencer'), semTreino = soma('semTreino');
   const veMembros = podeVer('membros') || podeVer('treinamentos');
 
@@ -1555,12 +1557,12 @@ function renderGlobalDashboard(){
     return `<button class="kpi${on?' on':''}" data-filtro="${f}" aria-pressed="${on}"><div class="num" style="color:${cor}">${num}</div><div class="label">${label}</div>${sub?`<div class="sub">${sub}</div>`:''}</button>`;
   };
   const nUn = escopo.length;
-  const idsEscopo = new Set(escopo.map(x=>x.unit.id));
+  const idsEscopo = new Set(visiveis.map(x=>x.unit.id));
   const alerts = computeAllAlerts().filter(a=>a.unit && idsEscopo.has(a.unit.id))
     .sort((a,b)=>(a.level==='danger'?0:1)-(b.level==='danger'?0:1));
   const attention = alerts.length
     ? alerts.slice(0,8).map(attentionRowHtml).join('') + (alerts.length>8 ? `<div class="lrow"><span></span><div class="s">+ ${alerts.length-8} outro(s) — abra a unidade para ver todos</div><span></span></div>` : '')
-    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${escopo.length===todas.length?' nas unidades':' neste filtro'}.</div><span></span></div>`;
+    : `<div class="lrow"><span class="pill pill-ok" style="justify-self:start;">Tudo em dia</span><div class="s">Nenhum alerta ativo${visiveis.length===todas.length?' nas unidades':' neste filtro'}.</div><span></span></div>`;
 
   const pendU = S.isAdmin ? S.usuarios.filter(u=>u.status==='pendente') : [];
   const pendRow = pendU.length ? `<div class="lrow"><span class="pill pill-warn" style="justify-self:start;">Acesso</span><div><div class="t">${pendU.length} cadastro(s) aguardando aprovação</div><div class="s">${esc(pendU.slice(0,3).map(u=>u.nome||u.email).join(', '))}${pendU.length>3?'…':''}</div></div><div><button class="btn btn-primary" data-go-acessos="1">Revisar</button></div></div>` : '';
@@ -1599,8 +1601,8 @@ function renderGlobalDashboard(){
     </div>
   </div>
   <div class="kpis" style="margin-bottom:12px;">
-    ${kpiF('entidade','SESI', nSesi, 'CIPAs SESI', 'unidades da entidade SESI', S._painelEntidade==='SESI')}
-    ${kpiF('entidade','SENAI', nSenai, 'CIPAs SENAI', 'unidades da entidade SENAI', S._painelEntidade==='SENAI')}
+    ${kpiF('entidade','SESI', nSesi, 'CIPAs SESI', 'unidade(s) da entidade SESI no recorte', S._painelEntidade==='SESI')}
+    ${kpiF('entidade','SENAI', nSenai, 'CIPAs SENAI', 'unidade(s) da entidade SENAI no recorte', S._painelEntidade==='SENAI')}
     ${kpiF('tipo','Eleito', veMembros?eleitos:'—', 'Eleitos', 'representam os empregados', tipoSel==='Eleito')}
     ${kpiF('tipo','Indicado', veMembros?indicados:'—', 'Indicados', 'representam o empregador', tipoSel==='Indicado')}
   </div>
