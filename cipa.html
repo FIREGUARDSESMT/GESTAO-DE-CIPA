@@ -246,6 +246,16 @@ button.kpi:focus-visible{outline:2px solid var(--primary); outline-offset:-2px;}
 .linkbox{margin-top:12px; padding:14px 16px; border:1px dashed var(--border); border-radius:10px;}
 .linkrow{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
 .linkrow input{flex:1 1 260px; min-width:0; height:40px; padding:0 10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; font-size:13px;}
+.reg-item{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.reg-item:last-child{border-bottom:0;}
+.reg-thumbs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:360px;}
+.reg-thumb{width:84px;height:84px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text-muted);font:inherit;font-size:11px;}
+.reg-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.reg-thumb:hover{border-color:var(--primary);}
+.reg-info{flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.reg-leg{white-space:pre-wrap;overflow-wrap:anywhere;}
+.reg-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+.reg-aviso{color:var(--danger);font-size:13px;margin-top:4px;}
 @media print{
   .sidebar, .tabs, #btnEditUnit, .no-print{display:none !important;}
   .app{display:block;}
@@ -313,6 +323,7 @@ const S = {
   _painelUnit: 'all',
   _painelFiltro: 'all', _painelEntidade: 'all', _painelTecnico: 'all', _painelTipo: 'all',
   _memTipo: 'all', _memSetor: 'all', _memBusca: '',
+  registros: [], linkRegistros: [], _linkRegs: {}, _regTipo: 'all', _regBusca: '',
   _relatorioTipo: 'geral',
   _relatorioUnitId: null,
   unsub: [],
@@ -628,9 +639,18 @@ function buildAdapters(app){
       const refs = await chunkRefs(id, token);
       await Promise.all(refs.map(r=>FS.deleteDoc(r)));
     },
+    async confere(id, token){
+      const refs = await chunkRefs(id, token);
+      if(!refs.length) return {ok:false, esperado:0, encontrados:0};
+      const snaps = await Promise.all(refs.map(r=>FS.getDoc(r)));
+      const achados = snaps.filter(x=>x.exists()).length;
+      return {ok: achados===refs.length, esperado: refs.length, encontrados: achados};
+    },
     async open(id, name, token){
       const parts = await chunksOf(id, token);
       if(!parts.length) throw new Error('Arquivo não encontrado.');
+      const esperado = parts[0].total || 1;
+      if(parts.length !== esperado) throw new Error('Arquivo incompleto: só '+parts.length+' de '+esperado+' partes foram carregadas. Peça para enviar de novo.');
       const bin = atob(parts.map(p=>p.data).join(''));
       const bytes = new Uint8Array(bin.length);
       for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
@@ -743,6 +763,16 @@ function showNoAccess(user){
   document.getElementById('btnLogoutNoAccess').addEventListener('click', ()=>AU.signOut(S.auth));
 }
 
+async function uploadConferido(file){
+  const up = await S.assets.upload(file);
+  const c = await S.assets.confere(up.id);
+  if(!c.ok){
+    try{ await S.assets.delete(up.id); }catch(_){}
+    throw new Error('"'+file.name+'" não foi carregado por completo '+(c.esperado ? '('+c.encontrados+' de '+c.esperado+' partes)' : '(nada foi gravado)')+'. Tente enviar de novo.');
+  }
+  return up;
+}
+
 async function openStoredFile(id, name, token){
   const win = window.open('about:blank', '_blank');
   try{
@@ -760,22 +790,26 @@ async function openStoredFile(id, name, token){
 /* ---------------- Link para envio de atas (sem login) ---------------- */
 function syncLinkSubs(){
   const tokens = new Set(S.links.map(l=>l.id));
-  Object.keys(S._linkSubs).forEach(t=>{
-    if(!tokens.has(t)){ try{ S._linkSubs[t](); }catch(e){} delete S._linkSubs[t]; delete S._linkAtas[t]; }
+  Object.keys(S._linkSubs).forEach(k=>{
+    const t = k.split(':')[0];
+    if(!tokens.has(t)){ try{ S._linkSubs[k](); }catch(e){} delete S._linkSubs[k]; delete S._linkAtas[t]; delete S._linkRegs[t]; }
   });
   S.links.forEach(l=>{
-    if(S._linkSubs[l.id]) return;
-    const unsub = S.db.sub('links', l.id, 'atas').onSnapshot(
-      snap => { S._linkAtas[l.id] = snap.docs.map(d=>({id:d.id, ...d.data()})); rebuildLinkDocs(); renderMain(); },
-      err => { console.error('atas do link', err); }
-    );
-    S._linkSubs[l.id] = unsub;
-    S.unsub.push(unsub);
+    [['atas', podeVer('atas'), S._linkAtas], ['registros', podeVer('registros'), S._linkRegs]].forEach(([sub, pode, alvo])=>{
+      const chave = l.id+':'+sub;
+      if(!pode || S._linkSubs[chave]) return;
+      const unsub = S.db.sub('links', l.id, sub).onSnapshot(
+        snap => { alvo[l.id] = snap.docs.map(d=>({id:d.id, ...d.data()})); rebuildLinkDocs(); renderMain(); },
+        err => { console.error(sub+' do link', err); }
+      );
+      S._linkSubs[chave] = unsub;
+      S.unsub.push(unsub);
+    });
   });
   rebuildLinkDocs();
 }
 function rebuildLinkDocs(){
-  const out = [];
+  const out = [], regs = [];
   S.links.forEach(l=>{
     (S._linkAtas[l.id] || []).forEach(a=>{
       out.push({
@@ -785,8 +819,16 @@ function rebuildLinkDocs(){
         arquivo:a.arquivo, assetId:a.assetId, uploadedAt:a.uploadedAt, subtitulo:null
       });
     });
+    (S._linkRegs[l.id] || []).forEach(r=>{
+      regs.push({
+        id:'L'+l.id+'_'+r.id, rawId:r.id, fromLink:l.id, unitId:l.unitId, mandateId:l.mandateId,
+        tipo:r.tipo, legenda:r.legenda||'', dataEvento:r.dataEvento, enviadoPor:r.enviadoPor||'',
+        anexos:Array.isArray(r.anexos) ? r.anexos : [], uploadedAt:r.uploadedAt
+      });
+    });
   });
   S.linkDocs = out;
+  S.linkRegistros = regs;
 }
 function randomToken(){
   const c = window.crypto;
@@ -833,6 +875,7 @@ function stopData(){
   S.unsub = []; S.started = false;
   S.units = []; S.mandates = []; S.members = []; S.documents = []; S.trainings = []; S.technicians = [];
   S.links = []; S.linkDocs = []; S._linkAtas = {}; S._linkSubs = {}; S._buckets = {};
+  S.registros = []; S.linkRegistros = []; S._linkRegs = {};
 }
 function stopListeners(){
   stopData();
@@ -908,7 +951,7 @@ function renderUserFooter(user){
 
 /* ---------------- subscriptions ---------------- */
 /* ---------------- Permissões ---------------- */
-const AREAS = [['mandatos','Mandatos'],['membros','Membros'],['documentos','Documentos'],['atas','Atas'],['treinamentos','Treinamentos'],['renovacoes','Renovações']];
+const AREAS = [['mandatos','Mandatos'],['membros','Membros'],['documentos','Documentos'],['atas','Atas'],['treinamentos','Treinamentos'],['renovacoes','Renovações'],['registros','Campanhas e ações']];
 function nivelDe(area){
   if(S.isAdmin) return 'editar';
   const p = S.perfil;
@@ -928,6 +971,7 @@ function subscribeScoped(){
     else if(col==='members') S.members = flat;
     else if(col==='documents') S.documents = flat;
     else if(col==='trainings') S.trainings = flat;
+    else if(col==='registros') S.registros = flat;
     else if(col==='links'){ S.links = flat; syncLinkSubs(); }
     renderMain();
   };
@@ -944,7 +988,8 @@ function subscribeScoped(){
       if(podeVer(area)) add(S.db.where('documents', [['unitId','==',u],['area','==',area]]).onSnapshot(snap=>setBucket('documents', u+'|'+area, mapDocs(snap)), errH(area)));
     });
     if(podeVer('treinamentos')) add(S.db.where('trainings', [['unitId','==',u]]).onSnapshot(snap=>setBucket('trainings', u, mapDocs(snap)), errH('treinamentos')));
-    if(podeVer('atas')) add(S.db.where('links', [['unitId','==',u]]).onSnapshot(snap=>setBucket('links', u, mapDocs(snap)), errH('links')));
+    if(podeVer('registros')) add(S.db.where('registros', [['unitId','==',u]]).onSnapshot(snap=>setBucket('registros', u, mapDocs(snap)), errH('registros')));
+    if(podeVer('atas') || podeVer('registros')) add(S.db.where('links', [['unitId','==',u]]).onSnapshot(snap=>setBucket('links', u, mapDocs(snap)), errH('links')));
   });
   add(S.db.collection('technicians').onSnapshot(snap=>{ S.technicians = mapDocs(snap); renderMain(); }, errH('técnicos')));
   add(S.db.doc('config/dimensionamento').onSnapshot(snap=>{ S.dimensionamento = snap.exists ? snap.data() : null; renderMain(); }, err=>console.error('dimensionamento', err)));
@@ -958,6 +1003,7 @@ function subscribeAll(){
     ['mandates', d => { S.mandates = d; renderMain(); }],
     ['members', d => { S.members = d; renderMain(); }],
     ['documents', d => { S.documents = d; renderMain(); }],
+    ['registros', d => { S.registros = d; renderMain(); }],
     ['links', d => { S.links = d; syncLinkSubs(); renderMain(); }],
     ['trainings', d => { S.trainings = d; renderMain(); }],
     ['technicians', d => { S.technicians = d; renderMain(); }],
@@ -1232,7 +1278,8 @@ function unitMetrics(unit){
   if(atasPend>0) motivos.push('Atas pendentes');
   if(vencidos>0) motivos.push('Certificado vencido');
   const estado = motivos.length ? 'irregular' : (inRenewal ? 'renovacao' : 'regular');
-  return {unit, am, members, eleitos: members.filter(m=>m.type==='Eleito').length, indicados: members.filter(m=>m.type==='Indicado').length,
+  const regs = podeVer('registros') ? contarRegistros(am ? mandateRegistros(unit.id, am.id) : []) : null;
+  return {unit, am, regs, members, eleitos: members.filter(m=>m.type==='Eleito').length, indicados: members.filter(m=>m.type==='Indicado').length,
           inRenewal, atasPend, vencidos, aVencer, semTreino, motivos, estado};
 }
 
@@ -1315,6 +1362,7 @@ const TABS = [
   {id:'membros', label:'Membros', areas:['membros']},
   {id:'documentos', label:'Documentos', areas:['documentos']},
   {id:'atas', label:'Atas', areas:['atas']},
+  {id:'registros', label:'Campanhas e ações', areas:['registros']},
   {id:'treinamentos', label:'Treinamentos', areas:['treinamentos']},
   {id:'alertas', label:'Alertas'}
 ];
@@ -1349,6 +1397,7 @@ function gateDom(){
   if(!podeEditar('membros')) hide('#btnNewMember,#btnImportMembers,[data-add-member-mandate],[data-edit-member],[data-del-member],[data-sel-member],[data-sel-all],#btnBulkDelMembers,#btnClearSel');
   if(!podeEditar('documentos')) hide('#btnNewDoc,[data-add-doc-mandate],[data-del-doc][data-area="documentos"]');
   if(!podeEditar('atas')) hide('#btnNewAta,[data-add-ata],[data-del-doc][data-area="atas"]');
+  if(!podeEditar('registros')) hide('#btnNewReg,[data-del-reg]');
   if(!podeEditar('treinamentos')) hide('#btnImportTrainings,#btnGroupTraining,#btnNewTraining,[data-del-training]');
   if(!podeEditar('mandatos')) hide('#btnNewMandate,#btnNewMandateQuick,[data-edit-mandate],[data-del-mandate],[data-fix-mandate]');
   if(!podeEditar('renovacoes')) hide('[data-renewal-action],[data-start-renewal],[data-manage-renewal]');
@@ -1433,6 +1482,7 @@ function renderMainCore(){
   else if(S.currentTab==='membros') html = renderMembros(unit);
   else if(S.currentTab==='documentos') html = renderDocumentos(unit);
   else if(S.currentTab==='atas') html = renderAtas(unit);
+  else if(S.currentTab==='registros') html = renderRegistros(unit);
   else if(S.currentTab==='treinamentos') html = renderTreinamentos(unit);
   else if(S.currentTab==='alertas') html = renderAlertasTab(unit);
   content.innerHTML = html;
@@ -1545,6 +1595,8 @@ function renderGlobalDashboard(){
   const atasPend = soma('atasPend'), unAtas = visiveis.filter(PAINEL_FILTROS.atas).length;
   const vencidos = soma('vencidos'), aVencer = soma('aVencer'), semTreino = soma('semTreino');
   const veMembros = podeVer('membros') || podeVer('treinamentos');
+  const veRegs = podeVer('registros');
+  const rs = k => visiveis.reduce((n,x)=>n+(x.regs ? x.regs[k] : 0),0);
 
   const entidades = [...new Set(S.units.map(entidadeDe).filter(Boolean))].sort((a,b)=>{ const o = {SESI:0, SENAI:1}; return ((o[a]!==undefined?o[a]:9)-(o[b]!==undefined?o[b]:9)) || a.localeCompare(b); });
   const haSemEnt = S.units.some(u=>!entidadeDe(u));
@@ -1605,6 +1657,12 @@ function renderGlobalDashboard(){
     ${kpiF('entidade','SENAI', nSenai, 'CIPAs SENAI', 'unidade(s) da entidade SENAI no recorte', S._painelEntidade==='SENAI')}
     ${kpiF('tipo','Eleito', veMembros?eleitos:'—', 'Eleitos', 'representam os empregados', tipoSel==='Eleito')}
     ${kpiF('tipo','Indicado', veMembros?indicados:'—', 'Indicados', 'representam o empregador', tipoSel==='Indicado')}
+  </div>
+  <div class="kpis" style="margin-bottom:12px;">
+    <div class="kpi"><div class="num">${veRegs?rs('Campanha'):'—'}</div><div class="label">Campanhas</div><div class="sub">no mandato atual</div></div>
+    <div class="kpi"><div class="num">${veRegs?rs('Ação'):'—'}</div><div class="label">Ações</div><div class="sub">no mandato atual</div></div>
+    <div class="kpi"><div class="num">${veRegs?rs('Evento'):'—'}</div><div class="label">Eventos</div><div class="sub">no mandato atual</div></div>
+    <div class="kpi"><div class="num">${veRegs?rs('Outros'):'—'}</div><div class="label">Outros registros</div><div class="sub">no mandato atual</div></div>
   </div>
   <div class="kpis k3">
     ${kpi('regular', cnt('regular'), 'Regulares', 'de '+nUn+' unidade(s)', 'var(--ok)')}
@@ -2001,8 +2059,18 @@ function renderVisaoGeral(unit){
     </tbody></table>
   </section>` : '';
 
+  const rg = (am && podeVer('registros')) ? contarRegistros(mandateRegistros(unit.id, am.id)) : null;
+  const regsPanel = rg ? `<section class="panel">
+    <div class="panel-head">Campanhas, ações e outros no mandato atual <button class="btn btn-sm" data-open-unit-tab="${unit.id}|registros">Ver registros</button></div>
+    <div style="padding:6px 20px 16px;display:flex;gap:24px;flex-wrap:wrap;">
+      <div><div style="font-size:22px;font-weight:600;">${rg['Campanha']}</div><div class="muted" style="font-size:13px;">campanha(s)</div></div>
+      <div><div style="font-size:22px;font-weight:600;">${rg['Ação']}</div><div class="muted" style="font-size:13px;">ação(ões)</div></div>
+      <div><div style="font-size:22px;font-weight:600;">${rg['Evento']}</div><div class="muted" style="font-size:13px;">evento(s)</div></div>
+      <div><div style="font-size:22px;font-weight:600;">${rg['Outros']}</div><div class="muted" style="font-size:13px;">outro(s)</div></div>
+    </div>
+  </section>` : '';
   return `<div class="two-col">
-    <div class="main-col">${mandateCard}${membersPanel}</div>
+    <div class="main-col">${mandateCard}${membersPanel}${regsPanel}</div>
     <div class="side-col">
       <section class="card">
         <h3>Dados da unidade</h3>
@@ -2559,6 +2627,44 @@ function bindTabEvents(unit){
     renderMain();
   });
   b('#btnSubtitulos', ()=>openSubtitulosModal());
+  b('#btnNewReg', el=>openRegistroModal(unit, el.dataset.mandate));
+  const rt = document.getElementById('regTipo'); if(rt) rt.addEventListener('change', ()=>{ S._regTipo = rt.value; renderMain(); });
+  const rb = document.getElementById('regBusca');
+  if(rb) rb.addEventListener('input', ()=>{
+    S._regBusca = rb.value; renderMain();
+    const novo = document.getElementById('regBusca');
+    if(novo){ novo.focus(); novo.setSelectionRange(novo.value.length, novo.value.length); }
+  });
+  const rl = document.getElementById('regLimpar'); if(rl) rl.addEventListener('click', ()=>{ S._regTipo = 'all'; S._regBusca = ''; renderMain(); });
+  b('[data-check-reg]', async el=>{
+    const reg = byId(S.registros, el.dataset.checkReg) || byId(S.linkRegistros, el.dataset.checkReg);
+    if(!reg) return;
+    el.disabled = true; el.textContent = 'Verificando…';
+    const ruins = [];
+    for(const a of (reg.anexos||[])){
+      try{ const r = await S.assets.confere(a.assetId, reg.fromLink || undefined); if(!r.ok) ruins.push(a.nome||'arquivo'); }
+      catch(e){ ruins.push((a.nome||'arquivo')+' (não foi possível ler)'); }
+    }
+    S._regRuins = S._regRuins || {};
+    if(ruins.length) S._regRuins[reg.id] = ruins; else delete S._regRuins[reg.id];
+    toast(ruins.length ? 'Atenção: '+ruins.length+' arquivo(s) incompleto(s) ou ausente(s) neste registro.' : 'Todos os '+(reg.anexos||[]).length+' arquivo(s) estão completos.', ruins.length ? 'err' : 'ok');
+    renderMain();
+  });
+  b('[data-del-reg]', async el=>{
+    if(!confirm('Excluir este registro e os arquivos dele?')) return;
+    const id = el.dataset.delReg;
+    const reg = byId(S.registros, id), lr = reg ? null : byId(S.linkRegistros, id);
+    try{
+      if(reg){
+        await dbDelete('registros', id);
+        for(const a of (reg.anexos||[])) if(a.assetId){ try{ await S.assets.delete(a.assetId); }catch(_){} }
+      } else if(lr){
+        await S.db.subDoc('links', lr.fromLink, 'registros', lr.rawId).delete();
+        for(const a of (lr.anexos||[])) if(a.assetId){ try{ await S.assets.delete(a.assetId, lr.fromLink); }catch(_){} }
+      }
+    }catch(e){ toast('Não foi possível excluir: '+(e.message||e.code), 'err'); return; }
+    toast('Registro excluído.', 'ok');
+  });
   b('#btnNewAta', el=>openAtaModal(unit, el.dataset.mandate));
   b('[data-add-ata]', el=>openAtaModal(unit, el.dataset.mandate, el.dataset.month));
   b('[data-toggle-ata]', el=>{
@@ -3136,7 +3242,7 @@ function openAtaModal(unit, presetMandateId, presetMonth){
     if(!file){ toast('Anexe o arquivo da ata.', 'err'); return; }
     const btn = document.getElementById('mSave'); btn.disabled = true; btn.textContent = 'Enviando…';
     try{
-      const res = await S.assets.upload(file);
+      const res = await uploadConferido(file);
       await dbAdd('documents', {
         unitId: unit.id, mandateId: curM.id, kind:'ata', area:'atas', category:'Ata de reunião',
         name: 'Ata '+tipo.toLowerCase()+' — '+fmtDate(data),
@@ -3440,6 +3546,195 @@ function openImportUnidadesModal(){
   });
 }
 
+/* ---------------- Registro de Campanhas, Ações e outros ---------------- */
+const REG_TIPOS = ['Campanha','Ação','Evento','Outros'];
+const REG_MAX_ARQUIVOS = 10;
+
+function registrosAll(){ return S.registros.concat(S.linkRegistros); }
+function mandateRegistros(unitId, mandateId){
+  return registrosAll().filter(r=>r.unitId===unitId && r.mandateId===mandateId)
+    .sort((a,b)=>(b.dataEvento||'').localeCompare(a.dataEvento||''));
+}
+function contarRegistros(lista){
+  const c = {total:lista.length, 'Campanha':0, 'Ação':0, 'Evento':0, 'Outros':0};
+  lista.forEach(r=>{ if(c[r.tipo]!==undefined) c[r.tipo]++; else c['Outros']++; });
+  return c;
+}
+const miniSegura = m => (typeof m==='string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(m)) ? m : '';
+
+function carregarImagem(file){
+  return new Promise((res, rej)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{ URL.revokeObjectURL(url); res(img); };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('imagem inválida')); };
+    img.src = url;
+  });
+}
+function reduzirImagem(img, max){
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  const k = Math.min(1, max / Math.max(w0, h0));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w0*k)); c.height = Math.max(1, Math.round(h0*k));
+  const ctx = c.getContext('2d');
+  if(!ctx) throw new Error('sem canvas');
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+/* Fotos são reduzidas (máx. 1600 px, JPEG) antes de enviar, e as primeiras ganham uma miniatura guardada no próprio registro. */
+async function prepararAnexo(file, querMini){
+  const r = {file, mini:null};
+  if(!/^image\//.test(file.type||'')) return r;
+  try{
+    const img = await carregarImagem(file);
+    const blob = await new Promise(res=>reduzirImagem(img, 1600).toBlob(b=>res(b), 'image/jpeg', 0.82));
+    if(blob && blob.size < file.size) r.file = new File([blob], file.name.replace(/\.[^.]+$/,'')+'.jpg', {type:'image/jpeg'});
+    if(querMini){
+      const mini = reduzirImagem(img, 280);
+      let q = 0.6, url = mini.toDataURL('image/jpeg', q);
+      while(url.length > 30000 && q > 0.3){ q -= 0.1; url = mini.toDataURL('image/jpeg', q); }
+      if(url.length <= 40000) r.mini = url;
+    }
+  }catch(e){ /* segue sem reduzir */ }
+  return r;
+}
+
+function renderRegistros(unit){
+  const mandates = unitMandates(unit.id);
+  if(mandates.length===0){
+    return `<div class="empty"><div class="big">${ico('doc','style="width:32px;height:32px"')}</div>Cadastre um mandato antes de registrar campanhas e ações.</div>`;
+  }
+  const cur = activeMandate(unit.id) || mandates[0];
+  const tipo = S._regTipo||'all', busca = (S._regBusca||'').trim(), q = chaveNome(busca);
+  const fAtivo = tipo!=='all' || !!busca;
+  const filtrar = l => l.filter(r=>(tipo==='all' || r.tipo===tipo) && (!q || chaveNome(r.legenda||'').includes(q)));
+  const miniatura = (a, r)=>{
+    const m = miniSegura(a.mini);
+    const ext = (String(a.nome||'').split('.').pop()||'').slice(0,4).toUpperCase();
+    return `<button class="reg-thumb${m?'':' reg-doc'}" title="${esc(a.nome||'arquivo')}" data-open-file="${esc(a.assetId)}" data-name="${esc(a.nome||'arquivo')}" data-token="${esc(r.fromLink||'')}">${m?`<img src="${m}" alt="${esc(a.nome||'foto')}">`:`${ico('doc')}<span>${esc(ext)}</span>`}</button>`;
+  };
+  const item = r=>{
+    const an = r.anexos||[];
+    return `<div class="reg-item">
+      <div class="reg-thumbs">${an.slice(0,4).map(a=>miniatura(a, r)).join('')}${an.length>4?`<span class="faint">+${an.length-4}</span>`:''}</div>
+      <div class="reg-info">
+        <div><span class="pill pill-info">${esc(r.tipo||'Outros')}</span> <b>${r.dataEvento?fmtDate(r.dataEvento):'sem data'}</b>${r.fromLink?` <span class="pill pill-info">via link${r.enviadoPor?' · '+esc(r.enviadoPor):''}</span>`:''}</div>
+        <div class="reg-leg">${esc(r.legenda||'')}</div>
+        <div class="faint">${an.length} arquivo(s)${!r.fromLink&&r.enviadoPor?' · registrado por '+esc(r.enviadoPor):''}</div>
+        <div class="reg-acts">${an.map((a,i)=>`<button class="btn btn-sm" data-open-file="${esc(a.assetId)}" data-name="${esc(a.nome||'arquivo')}" data-token="${esc(r.fromLink||'')}">Abrir ${an.length>1?(i+1):''}</button>`).join('')}<button class="btn btn-sm" data-check-reg="${r.id}">Verificar arquivos</button><button class="btn btn-sm btn-danger" data-del-reg="${r.id}">Excluir</button></div>
+        ${(S._regRuins && S._regRuins[r.id]) ? `<div class="reg-aviso">⚠ Arquivo(s) incompleto(s) ou ausente(s): ${esc(S._regRuins[r.id].join(', '))}. Peça para enviar de novo.</div>` : ''}
+      </div></div>`;
+  };
+  return `
+  <div class="row" style="margin-bottom:8px; align-items:flex-start;">
+    <div>
+      <div class="sect-title" style="margin:0;">Registro de Campanhas, Ações e outros</div>
+      <div class="muted" style="font-size:13px; margin-top:2px; max-width:680px;">Guarde fotos e documentos dos trabalhos da CIPA, com legenda e a data em que aconteceram. A própria CIPA também pode enviar pelo link de envio de atas. Os totais alimentam os indicadores do Painel.</div>
+    </div>
+    <button class="btn btn-primary" id="btnNewReg" data-mandate="${cur.id}">${ico('plus')}Registrar</button>
+  </div>
+  <div class="filtro-bar" style="margin:12px 0 4px;">
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+      <div><label for="regTipo" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Tipo</label>
+        <select id="regTipo" style="min-width:150px;"><option value="all">Todos</option>${REG_TIPOS.map(t=>`<option value="${esc(t)}" ${tipo===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>
+      <div><label for="regBusca" style="font-weight:600;font-size:12px;display:block;margin-bottom:4px;">Buscar na legenda</label>
+        <input id="regBusca" type="search" value="${esc(S._regBusca||'')}" placeholder="Ex.: Setembro Amarelo" style="height:40px;padding:0 10px;border:1px solid #cbd2da;border-radius:8px;background:var(--surface);color:var(--text);font:inherit;min-width:240px;"></div>
+    </div>
+    ${fAtivo?`<button class="btn" id="regLimpar">Limpar filtros</button>`:''}
+  </div>
+  <div style="height:12px;"></div>
+  ${mandates.map(m=>{
+    const todos = mandateRegistros(unit.id, m.id), lista = filtrar(todos), c = contarRegistros(todos);
+    const isCur = cur.id===m.id;
+    return `<section class="panel" style="margin-bottom:16px;">
+      <div class="panel-head">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</span>${isCur?'<span class="pill pill-info">Gestão atual</span>':'<span class="pill pill-muted">Gestão anterior</span>'}</div>
+        <div class="muted" style="font-weight:400;font-size:13px;">${c.total} registro(s): ${c['Campanha']} campanha(s) · ${c['Ação']} ação(ões) · ${c['Evento']} evento(s) · ${c['Outros']} outro(s)${fAtivo?' · mostrando '+lista.length:''}</div>
+      </div>
+      <div style="padding:4px 16px 12px;">${lista.length ? lista.map(item).join('') : `<div class="faint" style="padding:16px 0;">${fAtivo?'Nenhum registro neste filtro.':'Nenhum registro nesta gestão.'}</div>`}</div>
+    </section>`;
+  }).join('')}`;
+}
+
+function openRegistroModal(unit, presetMandateId){
+  const mandates = unitMandates(unit.id);
+  if(!mandates.length){ toast('Cadastre um mandato antes de registrar.', 'err'); return; }
+  let curM = byId(mandates, presetMandateId) || activeMandate(unit.id) || mandates[0];
+  openModal('Registrar campanha, ação ou outros', `
+    <div class="field"><label>Gestão (mandato) *</label>
+      <select id="rgMandate">${mandates.map(m=>`<option value="${m.id}" ${m.id===curM.id?'selected':''}>${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}</option>`).join('')}</select></div>
+    <div class="field-row">
+      <div class="field"><label for="rgTipo">Tipo *</label><select id="rgTipo">${REG_TIPOS.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label for="rgData">Data em que ocorreu *</label><input type="date" id="rgData"></div>
+    </div>
+    <div class="field"><label for="rgLegenda">Legenda *</label><textarea id="rgLegenda" rows="3" maxlength="500" placeholder="Ex.: Campanha de vacinação contra a gripe no refeitório"></textarea></div>
+    <div class="field"><label for="rgFiles">Fotos e documentos * (até ${REG_MAX_ARQUIVOS} arquivos, 5 MB cada)</label><input type="file" id="rgFiles" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"><div class="hint">As fotos são reduzidas automaticamente. Não feche esta janela durante o envio: cada arquivo é conferido e o registro só é salvo quando todos chegarem completos.</div></div>
+    <div id="rgLista" role="status" aria-live="polite"></div>
+    <div id="rgAviso" role="alert"></div>
+  `, `<button class="btn" id="mCancel">Cancelar</button><button class="btn btn-primary" id="mSave">Salvar registro</button>`);
+  const lista = document.getElementById('rgLista'), aviso = document.getElementById('rgAviso');
+  const btn = document.getElementById('mSave'), cancel = document.getElementById('mCancel');
+  const estados = [];
+  let iniciou = false, salvo = false, ocupado = false;
+  const rotulo = e => e.st==='ok' ? '<span style="color:var(--ok);">✓ enviado e conferido</span>'
+    : e.st==='enviando' ? 'enviando…'
+    : e.st==='erro' ? '<span style="color:var(--danger);">✗ não foi enviado</span>' : 'aguardando';
+  const desenhar = ()=>{
+    lista.innerHTML = estados.length ? `<div style="border:1px solid var(--border);border-radius:8px;padding:2px 12px;margin-top:8px;">${estados.map(e=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--border);"><span style="overflow-wrap:anywhere;">${esc(e.file.name)}${e.st==='erro'?`<div style="color:var(--danger);font-size:12px;">${esc(e.msg)}</div>`:''}</span><span style="white-space:nowrap;">${rotulo(e)}</span></div>`).join('')}</div>` : '';
+  };
+  const caixa = txt => `<div style="border:1px solid var(--danger);border-radius:8px;padding:10px 12px;color:var(--danger);font-size:13px;margin-top:8px;">${txt}</div>`;
+  const descartar = async ()=>{ for(const e of estados) if(e.anexo){ try{ await S.assets.delete(e.anexo.assetId); }catch(_){} } };
+  cancel.addEventListener('click', async ()=>{ if(ocupado) return; if(!salvo) await descartar(); closeModal(); });
+  document.getElementById('rgMandate').addEventListener('change', e=>{ curM = byId(mandates, e.target.value); });
+  btn.addEventListener('click', async ()=>{
+    if(ocupado) return;
+    const tipo = document.getElementById('rgTipo').value;
+    const data = document.getElementById('rgData').value;
+    const legenda = document.getElementById('rgLegenda').value.trim();
+    const escolhidos = [...document.getElementById('rgFiles').files];
+    if(!data){ toast('Informe a data em que ocorreu.', 'err'); return; }
+    if(data < curM.startDate || data > curM.endDate){ toast('A data precisa estar dentro da gestão ('+fmtDate(curM.startDate)+' a '+fmtDate(curM.endDate)+').', 'err'); return; }
+    if(legenda.length < 3){ toast('Escreva a legenda.', 'err'); return; }
+    if(!iniciou){
+      if(!escolhidos.length){ toast('Anexe ao menos um arquivo.', 'err'); return; }
+      if(escolhidos.length > REG_MAX_ARQUIVOS){ toast('Envie no máximo '+REG_MAX_ARQUIVOS+' arquivos por registro.', 'err'); return; }
+      escolhidos.forEach(f=>estados.push({file:f, st:'espera', msg:'', anexo:null}));
+      iniciou = true;
+      document.getElementById('rgFiles').disabled = true; document.getElementById('rgMandate').disabled = true;
+    }
+    ocupado = true; btn.disabled = true; cancel.disabled = true; aviso.innerHTML = '';
+    for(const e of estados){
+      if(e.st==='ok') continue;
+      e.st = 'enviando'; e.msg = ''; desenhar();
+      try{
+        const pr = await prepararAnexo(e.file, estados.filter(x=>x.anexo && x.anexo.mini).length < 3);
+        const up = await uploadConferido(pr.file);
+        e.anexo = {assetId:up.id, nome:e.file.name.slice(0,120), tipo:up.contentType, tamanho:up.sizeBytes, ...(pr.mini ? {mini:pr.mini} : {})};
+        e.st = 'ok';
+      }catch(err){ e.st = 'erro'; e.msg = err.message || err.code || 'erro desconhecido'; }
+      desenhar();
+    }
+    const falhas = estados.filter(e=>e.st!=='ok');
+    if(falhas.length){
+      aviso.innerHTML = caixa(`<b>Atenção: ${falhas.length} de ${estados.length} arquivo(s) não foram enviados por completo.</b> O registro ainda não foi salvo. Confira a internet e clique em "Tentar novamente": só os que falharam serão reenviados.`);
+      btn.textContent = 'Tentar novamente ('+falhas.length+')'; btn.disabled = false; cancel.disabled = false; ocupado = false;
+      return;
+    }
+    btn.textContent = 'Salvando registro…';
+    const id = await dbAdd('registros', {
+      unitId: unit.id, mandateId: curM.id, tipo, legenda, dataEvento: data,
+      enviadoPor: (S.user && (S.user.displayName || S.user.email)) || '', anexos: estados.map(e=>e.anexo), uploadedAt: new Date().toISOString()
+    });
+    if(!id){
+      aviso.innerHTML = caixa('<b>Os arquivos chegaram, mas o registro não foi salvo.</b> Clique em "Tentar salvar de novo".');
+      btn.textContent = 'Tentar salvar de novo'; btn.disabled = false; cancel.disabled = false; ocupado = false;
+      return;
+    }
+    salvo = true; ocupado = false; closeModal();
+    toast('Registro salvo, com os '+estados.length+' arquivo(s) conferidos.', 'ok');
+  });
+}
+
 /* ---------------- Document modal (upload) ---------------- */
 function openDocModal(unit, presetMandateId){
   const mandates = unitMandates(unit.id);
@@ -3511,7 +3806,7 @@ function openDocModal(unit, presetMandateId){
     const saveBtn = document.getElementById('mSave');
     saveBtn.disabled = true; saveBtn.textContent = 'Enviando…';
     try{
-      const res = await S.assets.upload(file);
+      const res = await uploadConferido(file);
       await dbAdd('documents', {
         unitId: unit.id, mandateId: mandateSel.value, area: 'documentos',
         category: isCustom ? 'Outros documentos' : name,
@@ -3563,7 +3858,7 @@ function openTrainingModal(unit){
     try{
       const file = document.getElementById('fTrFile').files[0];
       if(file && S.assets){
-        const res = await S.assets.upload(file);
+        const res = await uploadConferido(file);
         data.certificateAssetId = res.id; data.certificateUrl = res.url;
       }
       await dbAdd('trainings', data);
